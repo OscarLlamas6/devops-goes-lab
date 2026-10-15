@@ -75,6 +75,8 @@ jobs:
       - name: Hooks, gitleaks history scan and pre-commit on all files
         run: ./scripts/setup-dev.sh --yes
       - name: Prove the secret barrier blocks fake secrets
+        env:
+          SKIP: "" # the job-level SKIP must not leak in: every hook has to be active for this test
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           git config --global user.name "ci"
