@@ -1,0 +1,41 @@
+# gitleaks configuration. Used by the pre-commit hook, the pre-push hook and CI.
+title = "tramites-platform gitleaks config"
+
+[extend]
+# Keep every official rule and add our own on top.
+useDefault = true
+
+[[rules]]
+id = "gcp-service-account-key"
+description = "GCP service account key file (JSON with private_key_id and private_key)"
+regex = '''(?s)["]private_key_id["]\s*:\s*["][^"]+["].{0,300}?["]private_key["]\s*:\s*["]-----BEGIN'''
+keywords = ['private_key_id']
+
+[[rules]]
+id = "gcp-api-key"
+description = "Google API key"
+regex = '''AIza[0-9A-Za-z\-_]{35}'''
+keywords = ["aiza"]
+
+[[rules]]
+id = "gcp-oauth-refresh-token"
+description = "Google OAuth refresh token"
+regex = '''1//[0-9A-Za-z\-_]{40,}'''
+keywords = ["1//"]
+
+[[rules]]
+id = "generic-api-key-assignment"
+description = "Assignment of a long literal to api_key / secret / token / password"
+regex = '''(?i)(?:api[_-]?key|secret|token|password)\s*[:=]\s*["']?([A-Za-z0-9_\-]{16,})'''
+secretGroup = 1
+# Minimum Shannon entropy of the captured value: filters out placeholders and prose.
+entropy = 3.0
+keywords = ["api_key", "api-key", "apikey", "secret", "token", "password"]
+
+# Allowlist kept minimal on purpose: an exception only applies when BOTH the path
+# and the content match, so a real secret pasted into .env.example is still caught.
+[[allowlists]]
+description = "Documented placeholder in .env.example"
+condition = "AND"
+paths = ['''^\.env\.example$''']
+regexes = ['''changeme''']

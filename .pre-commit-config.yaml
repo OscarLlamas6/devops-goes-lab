@@ -1,0 +1,91 @@
+# One `pre-commit install` registers all three stages.
+# The same file runs locally and in CI (job `security`).
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+fail_fast: false
+
+repos:
+  # Secrets in the staged diff, using the rules in .gitleaks.toml
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      # Second net for PEM private keys, independent of gitleaks
+      - id: detect-private-key
+      # AWS credentials (relevant to the on-prem + AWS criterion question)
+      - id: detect-aws-credentials
+        args: [--allow-missing-credentials]
+      # Binaries or dumps added by mistake
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+      # Trunk-based: nothing is committed directly to main
+      # Commit stage only: by default it also runs on pre-push and would block pushing main
+      - id: no-commit-to-branch
+        args: [--branch, main]
+        stages: [pre-commit]
+
+  # Terraform formatting (same criterion as CI)
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.109.2
+    hooks:
+      - id: terraform_fmt
+
+  # Conventional Commits, checked on the commit message
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [feat, fix, chore, docs, security, ci, refactor, test, build, perf, revert]
+
+  - repo: local
+    hooks:
+      # Blocks by file NAME, even if the content does not look like a secret
+      - id: forbid-sensitive-files
+        name: forbid sensitive files (.env, tfstate, tfvars, keys)
+        language: fail
+        entry: >-
+          Sensitive file blocked by name. Secrets live in Secret Manager, never in Git.
+          Use the *.example variant with placeholders, or add the file to .gitignore.
+        files: '(^|/)\.env$|\.env\.(?!example$)|\.tfstate|\.tfvars$|-key\.json$|credentials.*\.json$|\.pem$|\.p12$|\.pfx$|id_rsa|\.kubeconfig'
+
+      # Content of GCP service account keys (the ["] classes keep this file from matching itself)
+      - id: forbid-gcp-sa-key
+        name: forbid GCP service account key content
+        language: pygrep
+        entry: '["]type["]:\s*["]service_account["]|["]private_key_id["]'
+
+      # Branch naming standard: feature/DEVOPS-NN-desc, fix/DEVOPS-NN, hotfix/DEVOPS-NN
+      - id: check-branch-name
+        name: check branch name
+        language: system
+        entry: scripts/check-branch-name.sh
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: gofmt
+        name: gofmt
+        language: system
+        entry: bash -c 'out=$(gofmt -l "$@"); if [ -n "$out" ]; then echo "gofmt needed:"; echo "$out"; exit 1; fi' --
+        files: '\.go$'
+
+      # Last local filter before a secret leaves the machine: scans the commits being pushed
+      - id: gitleaks-pre-push
+        name: gitleaks on commits to push
+        language: system
+        entry: >-
+          bash -c 'range="${PRE_COMMIT_TO_REF:-HEAD}";
+          if [ -n "${PRE_COMMIT_FROM_REF:-}" ]; then range="${PRE_COMMIT_FROM_REF}..${range}"; fi;
+          gitleaks git --redact --verbose --log-opts="$range"'
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

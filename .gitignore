@@ -1,0 +1,33 @@
+# Secrets and local configuration (never commit these)
+.env
+.env.*
+!.env.example
+*.tfvars
+!*.tfvars.example
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*-key.json
+credentials*.json
+*.pem
+*.p12
+*.pfx
+id_rsa*
+*.kubeconfig
+
+# Terraform (the lock file IS committed)
+.terraform/
+*.tfplan
+
+# Go
+*.exe
+*.test
+*.out
+/app/api
+/app/tramites-api
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
