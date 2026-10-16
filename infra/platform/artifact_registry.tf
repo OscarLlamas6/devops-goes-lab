@@ -10,8 +10,10 @@ resource "google_artifact_registry_repository" "tramites" {
     immutable_tags = true
   }
 
-  # Image storage is the silent cost that grows. KEEP wins over DELETE, so the 10 most
-  # recent versions always survive and anything older than 7 days beyond those is removed.
+  # Known limitation: with immutable tags, Artifact Registry does NOT let cleanup policies delete
+  # tagged images, and every image the pipeline pushes is tagged with its commit SHA. So these
+  # policies only ever remove untagged images; tagged ones accumulate (about 9 MB each, cents per
+  # month). Immutability was kept on purpose over automatic cleanup. KEEP wins over DELETE.
   cleanup_policy_dry_run = false
 
   cleanup_policies {
