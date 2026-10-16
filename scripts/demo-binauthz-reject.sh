@@ -41,6 +41,7 @@ DIGEST="$(gcloud artifacts docker images describe "${IMAGE}" --format='value(ima
 
 echo "==> Trying to deploy it (this MUST be rejected)"
 set +e
+export CLOUDSDK_CORE_DISABLE_COLOR=true # keep the evidence file free of ANSI escape codes
 gcloud run deploy "${SERVICE_NAME}" \
   --image "${REPO}/${SERVICE_NAME}@${DIGEST}" \
   --region "${REGION}" \
@@ -59,11 +60,31 @@ fi
 
 echo "✅ Rejected as expected (exit ${STATUS}). Evidence saved to ${EVIDENCE}"
 echo
-echo "Where to see the denial in Cloud Logging (take the screenshot there):"
-echo "  Console -> Logging -> Logs Explorer, query:"
-echo "    protoPayload.serviceName=\"binaryauthorization.googleapis.com\""
-echo "  or from the CLI:"
-echo "    gcloud logging read 'protoPayload.serviceName=\"binaryauthorization.googleapis.com\"' --limit 5 --freshness 1h"
+# The denial is not logged by binaryauthorization.googleapis.com (that one only records changes to
+# the policy and attestors). It shows up as an ERROR audit event of the Cloud Run service itself.
+LOG_FILTER="protoPayload.status.message:\"denied by attestor\" AND protoPayload.status.message:\"${DIGEST}\""
+echo "==> Looking for the denial in Cloud Logging (audit entries can take a few seconds)"
+LOG_ENTRY=""
+for _ in 1 2 3 4 5 6; do
+  LOG_ENTRY="$(gcloud logging read "${LOG_FILTER}" --limit 1 --freshness 1h \
+    --format='value(timestamp,severity,logName.basename(),protoPayload.methodName,protoPayload.status.code)' 2>/dev/null || true)"
+  [ -n "${LOG_ENTRY}" ] && break
+  sleep 5
+done
+if [ -n "${LOG_ENTRY}" ]; then
+  {
+    echo
+    echo "# Cloud Logging entry (timestamp, severity, log, method, status code 7 = PERMISSION_DENIED)"
+    echo "# filter: ${LOG_FILTER}"
+    echo "${LOG_ENTRY}"
+  } >> "${EVIDENCE}"
+  echo "${LOG_ENTRY}"
+else
+  echo "Not found yet. Look for it manually in the console."
+fi
+echo
+echo "To take the screenshot: Console -> Logging -> Logs Explorer, query:"
+echo "    ${LOG_FILTER}"
 
 echo
 echo "==> The unsigned test image is left in Artifact Registry. Remove it with:"

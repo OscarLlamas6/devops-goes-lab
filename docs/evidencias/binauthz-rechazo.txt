@@ -1,0 +1,16 @@
+# Binary Authorization rejection demo
+# date:    2026-10-16T06:06:14Z
+# project: devops-gcp-elsalvador
+# image:   us-central1-docker.pkg.dev/devops-gcp-elsalvador/tramites/tramites-api@sha256:ed8af061e3e1014fdf109e1559ecb834a20e86c53f1290e2e0dc75b8686a1183 (no attestation)
+# command: gcloud run deploy tramites-api --image <image>@<digest> --no-traffic --tag=unsigned
+
+Deploying container to Cloud Run service [tramites-api] in project [devops-gcp-elsalvador] region [us-central1]
+Deploying...
+Creating Revision..............................................failed
+Deployment failed
+ERROR: (gcloud.run.deploy) Container image 'us-central1-docker.pkg.dev/devops-gcp-elsalvador/tramites/tramites-api@sha256:ed8af061e3e1014fdf109e1559ecb834a20e86c53f1290e2e0dc75b8686a1183' is not authorized by policy. 'us-central1-docker.pkg.dev/devops-gcp-elsalvador/tramites/tramites-api@sha256:ed8af061e3e1014fdf109e1559ecb834a20e86c53f1290e2e0dc75b8686a1183' : Image us-central1-docker.pkg.dev/devops-gcp-elsalvador/tramites/tramites-api@sha256:ed8af061e3e1014fdf109e1559ecb834a20e86c53f1290e2e0dc75b8686a1183 denied by attestor projects/devops-gcp-elsalvador/attestors/pipeline-attestor: No attestations found that were valid and signed by a key trusted by the attestor
+
+
+# Cloud Logging entry (timestamp, severity, log, method, status code 7 = PERMISSION_DENIED)
+# filter: protoPayload.status.message:"denied by attestor" AND protoPayload.status.message:"sha256:ed8af061e3e1014fdf109e1559ecb834a20e86c53f1290e2e0dc75b8686a1183"
+2026-10-16T06:06:20.050036Z	ERROR	cloudaudit.googleapis.com%2Fsystem_event	/Services.ReplaceService	7
