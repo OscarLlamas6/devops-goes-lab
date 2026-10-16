@@ -47,6 +47,7 @@ infra/platform/      Terraform con estado remoto: registry, Cloud Run, secreto, 
 scripts/             setup-dev.sh, test-secret-hooks.sh, check-branch-name.sh, demo-binauthz-reject.sh
 docs/evidencias/     Evidencia del rechazo de Binary Authorization
 CRITERIO.md          Respuestas de criterio (Parte C)
+3dtour/             Recorrido guiado en 3D de toda la plataforma (abrir index.html)
 ```
 
 ## Despliegue desde cero
