@@ -78,20 +78,47 @@ jobs:
             echo "ATTESTOR and KMS_KEY_VERSION repository variables are required" >&2
             exit 1
           fi
-          gcloud beta container binauthz attestations sign-and-create \
+          # Signing is deterministic, so re-running for a digest that is already attested produces
+          # the same occurrence and Container Analysis answers with a conflict. That means the
+          # attestation exists, which is exactly what we want, so only that error is tolerated.
+          if ! OUTPUT="$(gcloud beta container binauthz attestations sign-and-create \
             --artifact-url="${AR_REPO}/${SERVICE_NAME}@${DIGEST}" \
             --attestor="${ATTESTOR}" \
-            --keyversion="${KMS_KEY_VERSION}"
+            --keyversion="${KMS_KEY_VERSION}" 2>&1)"; then
+            if echo "${OUTPUT}" | grep -q "is the subject of a conflict"; then
+              echo "Digest ${DIGEST} is already attested, continuing."
+            else
+              echo "${OUTPUT}" >&2
+              exit 1
+            fi
+          else
+            echo "${OUTPUT}"
+          fi
 
+      # A new attestation takes a little while to be visible to Binary Authorization, so a deploy
+      # right after signing can be denied even though the attestation is valid. Retry only that error.
       - name: Deploy to Cloud Run
         env:
           IMAGE: ${{ steps.image.outputs.image }}
           DIGEST: ${{ steps.image.outputs.digest }}
         run: |
-          gcloud run deploy "${SERVICE_NAME}" \
-            --image "${IMAGE}@${DIGEST}" \
-            --region "${REGION}" \
-            --quiet
+          for ATTEMPT in 1 2 3 4 5 6; do
+            if OUTPUT="$(gcloud run deploy "${SERVICE_NAME}" \
+              --image "${IMAGE}@${DIGEST}" \
+              --region "${REGION}" \
+              --quiet 2>&1)"; then
+              echo "${OUTPUT}"
+              exit 0
+            fi
+            echo "${OUTPUT}" >&2
+            if ! echo "${OUTPUT}" | grep -q "denied by attestor"; then
+              exit 1
+            fi
+            echo "Attestation not visible yet (attempt ${ATTEMPT}/6), retrying in 20s..."
+            sleep 20
+          done
+          echo "Deploy still denied after retries: check the attestor's public key matches KMS_KEY_VERSION" >&2
+          exit 1
 
       # Fails the job if the service is not healthy or is not running this commit.
       - name: Smoke test
