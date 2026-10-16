@@ -46,5 +46,7 @@ jobs:
         env:
           PAGE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          curl -fsS --retry 6 --retry-delay 5 --retry-all-errors "${PAGE_URL}" | grep -q "Recorrido 3D"
+          # Not a pipe: with pipefail, `grep -q` exiting early would make curl fail with exit 23.
+          BODY="$(curl -fsS --retry 6 --retry-delay 5 --retry-all-errors "${PAGE_URL}")"
+          grep -q "Recorrido 3D" <<<"${BODY}"
           echo "OK: ${PAGE_URL}"
