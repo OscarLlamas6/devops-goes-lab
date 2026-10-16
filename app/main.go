@@ -30,7 +30,7 @@ func newMux() *http.ServeMux {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		// Only reports whether the secret is set, never its value.
 		respond(w, r, http.StatusOK, map[string]any{
-			"status":            "ok",
+			"status":            "Server running",
 			"version":           version,
 			"secret_configured": os.Getenv("API_KEY") != "",
 		})
