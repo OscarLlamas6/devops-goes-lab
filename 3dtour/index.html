@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recorrido 3D · tramites-platform</title>
+<meta name="description" content="Recorrido guiado en 3D por la plataforma tramites-platform: del commit al ciudadano, con Binary Authorization.">
+
+<!-- three.js fijado a una versión exacta y con verificación de integridad (SRI):
+     si el archivo del CDN cambiara, el navegador se niega a ejecutarlo. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.min.js"
+  },
+  "integrity": {
+    "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.module.min.js": "sha384-35WaVqXNGvw49+RCXk67Ci9ebo55/5+CfirDbAVSG21KV8/7gO4xwIkhA5ZRcUHc",
+    "https://cdn.jsdelivr.net/npm/three@0.184.0/build/three.core.min.js": "sha384-/2vXInuUL2LKgd3n86c5RIzG+YC7vk3zYPTknaEkF2H2sauHtaOrS8swZ+MURxU6"
+  }
+}
+</script>
+
+<style>
+:root{
+  --bg:#070b16; --panel:rgba(11,17,33,.82); --line:rgba(148,163,184,.2);
+  --text:#e2e8f0; --muted:#94a3b8; --accent:#60a5fa; --ok:#34d399; --bad:#f87171; --warn:#fbbf24;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+canvas#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+canvas#c.drag{cursor:grabbing}
+#labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.lbl{position:absolute;left:0;top:0;white-space:nowrap;font-size:12px;line-height:1.3;padding:3px 9px;border-radius:8px;
+  background:rgba(7,11,22,.78);border:1px solid var(--line);backdrop-filter:blur(4px);transition:opacity .25s;will-change:transform}
+.lbl.zone{font-weight:700;letter-spacing:.07em;text-transform:uppercase;font-size:11px;padding:4px 11px}
+.lbl.pop{font-weight:600;font-size:12.5px;padding:5px 11px;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+.lbl.note{white-space:normal;max-width:170px;text-align:center;font-size:12px;padding:6px 10px}
+.lbl.hidden{opacity:0}
+
+header{position:fixed;left:16px;right:16px;top:12px;display:flex;justify-content:space-between;align-items:center;pointer-events:none;gap:12px}
+.brand{font-weight:700;letter-spacing:.02em;display:flex;gap:10px;align-items:center}
+.brand small{font-weight:500;color:var(--muted)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 12px var(--ok)}
+#count{color:var(--muted);font-variant-numeric:tabular-nums}
+#bar{position:fixed;left:0;top:0;height:3px;background:linear-gradient(90deg,#2dd4bf,#60a5fa,#a78bfa);width:0;transition:width .5s}
+
+#panel{position:fixed;right:16px;top:52px;bottom:84px;width:min(430px,40vw);overflow:auto;padding:20px 22px;
+  background:var(--panel);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(12px);
+  box-shadow:0 20px 60px rgba(0,0,0,.5);transition:opacity .3s,transform .3s}
+#panel.off{opacity:0;pointer-events:none;transform:translateX(24px)}
+#panel::-webkit-scrollbar{width:8px}#panel::-webkit-scrollbar-thumb{background:rgba(148,163,184,.3);border-radius:8px}
+.kicker{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:700}
+h1,h2{margin:.25em 0 .5em;line-height:1.2}
+h2{font-size:22px}
+#text p,#why p{margin:.45em 0}
+code{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:rgba(148,163,184,.14);padding:1px 5px;border-radius:5px}
+.sec{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.sec h3{margin:0 0 6px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+#why{color:#cbd5e1;font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;padding:3px 8px;border-radius:999px;background:rgba(96,165,250,.12);border:1px solid rgba(96,165,250,.3);color:#bfdbfe}
+.cmd{position:relative}
+.cmd pre{margin:0;padding:10px 74px 10px 12px;background:#050810;border:1px solid var(--line);border-radius:10px;
+  overflow-x:auto;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#a7f3d0;white-space:pre-wrap;overflow-wrap:anywhere}
+.cmd button{position:absolute;right:8px;top:8px}
+button{font:inherit;color:var(--text);background:rgba(148,163,184,.14);border:1px solid var(--line);border-radius:9px;padding:6px 12px;cursor:pointer}
+button:hover{background:rgba(148,163,184,.26)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.cmd button{font-size:12px;padding:3px 9px}
+.q{font-weight:600;margin:0 0 8px}
+.opts{display:grid;gap:7px}
+.opt{text-align:left;padding:8px 12px}
+.opt.ok{background:rgba(52,211,153,.18);border-color:var(--ok)}
+.opt.bad{background:rgba(248,113,113,.18);border-color:var(--bad)}
+.opt[disabled]{cursor:default;opacity:.95}
+#fb{margin-top:8px;font-size:13.5px;color:#cbd5e1}
+#score{font-size:15px}
+
+nav{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:8px 12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:999px;backdrop-filter:blur(12px);max-width:calc(100vw - 16px)}
+nav .nb{width:38px;height:38px;border-radius:50%;padding:0;font-size:15px;display:grid;place-items:center}
+#dots{display:flex;gap:7px;align-items:center}
+#dots button{width:12px;height:12px;padding:0;border-radius:50%;border:1px solid rgba(148,163,184,.5);background:transparent}
+#dots button.done{background:rgba(96,165,250,.45)}
+#dots button.cur{background:var(--accent);box-shadow:0 0 10px var(--accent);transform:scale(1.25)}
+#auto.on{background:rgba(52,211,153,.2);border-color:var(--ok)}
+#hint{position:fixed;left:16px;bottom:22px;color:var(--muted);font-size:12px;max-width:260px}
+
+#fallback{position:fixed;inset:0;overflow:auto;padding:24px;background:var(--bg);display:none;z-index:5}
+#fallback .in{max-width:820px;margin:0 auto}
+#fallback article{margin:18px 0;padding:14px 16px;border:1px solid var(--line);border-radius:12px}
+.err{color:var(--warn)}
+
+@media (max-width:820px){
+  #panel{left:8px;right:8px;top:auto;bottom:72px;width:auto;max-height:44vh;padding:14px 16px}
+  header{left:10px;right:10px}
+  #hint{display:none}
+  #dots{display:none}
+  nav{bottom:10px}
+}
+@media (prefers-reduced-motion:reduce){ .lbl,#panel{transition:none} }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Escena 3D del recorrido"></canvas>
+<div id="labels" aria-hidden="true"></div>
+<div id="bar"></div>
+
+<header>
+  <div class="brand"><span class="dot"></span><span>tramites-platform <small>· recorrido 3D</small></span></div>
+  <div id="count">1 / 1</div>
+</header>
+
+<aside id="panel" aria-live="polite">
+  <div class="kicker" id="kicker"></div>
+  <h2 id="title"></h2>
+  <div id="text"></div>
+  <div class="sec" id="whySec"><h3>Por qué así</h3><div id="why"></div></div>
+  <div class="sec" id="filesSec"><h3>En el repositorio</h3><div class="chips" id="files"></div></div>
+  <div class="sec" id="cmdSec"><h3>Pruébalo</h3><div class="cmd"><pre id="cmd"></pre><button id="copy" type="button">Copiar</button></div></div>
+  <div class="sec" id="quizSec"><h3>Comprueba lo aprendido</h3><p class="q" id="qq"></p><div class="opts" id="opts"></div><div id="fb"></div></div>
+  <div class="sec" id="scoreSec" hidden><h3>Tu resultado</h3><div id="score"></div></div>
+</aside>
+
+<nav aria-label="Controles del recorrido">
+  <button class="nb" id="prev" type="button" title="Anterior (←)" aria-label="Paso anterior">◀</button>
+  <div id="dots" role="tablist"></div>
+  <button class="nb" id="next" type="button" title="Siguiente (→)" aria-label="Paso siguiente">▶</button>
+  <button class="nb" id="auto" type="button" title="Reproducción automática (espacio)" aria-label="Reproducción automática">⏵</button>
+  <button class="nb" id="reset" type="button" title="Restablecer la cámara (R)" aria-label="Restablecer la cámara">⟲</button>
+  <button class="nb" id="toggle" type="button" title="Ocultar/mostrar el panel (H)" aria-label="Ocultar o mostrar el panel">▤</button>
+</nav>
+<div id="hint">Arrastra para girar · rueda para acercar · ← → para navegar · espacio: automático · H: panel</div>
+
+<div id="fallback"><div class="in" id="fbIn"></div></div>
+<noscript><p style="padding:24px">Este recorrido necesita JavaScript.</p></noscript>
+
+<script type="module">
+/* ============================================================================================
+   CONTENIDO (datos puros: sirve también como versión de texto si WebGL o el CDN no están disponibles)
+   ============================================================================================ */
+const STEPS = [
+  { id:'intro', kicker:'Visión general', title:'El caso: consultar un trámite',
+    text:`<p>Un ciudadano escribe el número de su trámite y ve en qué estado va. La aplicación es mínima (una API en Go de un solo archivo): lo que se diseñó con cuidado es la <b>plataforma</b> que la entrega, para que sea <b>segura, inmutable, barata y automatizada</b>.</p><p>Sigue el recorrido de un cambio: de tu laptop hasta el ciudadano, pasando por las puertas que impiden que algo inseguro llegue.</p>`,
+    why:`<p>Los equipos (Go, Python, React) quieren desplegar sin pedirle ayuda a DevOps cada vez. Eso solo es sostenible si el camino seguro es también el camino fácil.</p>`,
+    files:['README.md','app/main.go'], cmd:`curl -s https://<url-del-servicio>/health`,
+    quiz:{q:'¿Qué se evalúa principalmente en este proyecto?', o:['La complejidad de la aplicación','La plataforma que la entrega','El diseño del frontend'], a:1, why:'La app es deliberadamente simple. Lo que importa es cómo se construye, protege y despliega.'} },
+
+  { id:'laptop', kicker:'Tu laptop · primera barrera', title:'Un secreto no llega a existir en Git',
+    text:`<p>Antes de que un commit exista, <b>pre-commit</b> ejecuta hooks: <b>gitleaks</b> busca secretos y otros hooks bloquean <code>.env</code>, <code>*.tfstate</code>, llaves privadas y llaves de service accounts de GCP, <b>por nombre y por contenido</b>. También se valida el nombre de la rama y el formato Conventional Commits, y <code>pre-push</code> escanea lo que estás por subir.</p>`,
+    why:`<p>Defensa en capas: lo más barato es detener el secreto antes de que salga de tu máquina. Pero un hook local se puede saltar con <code>--no-verify</code> o no estar instalado. Por eso existe otra barrera en CI.</p>`,
+    files:['.pre-commit-config.yaml','.gitleaks.toml','scripts/setup-dev.sh','scripts/test-secret-hooks.sh'], cmd:`./scripts/test-secret-hooks.sh`,
+    quiz:{q:'¿Por qué los mismos hooks corren también en CI?', o:['Porque el hook local puede no estar instalado o saltarse con --no-verify','Para que el pipeline sea más lento','Porque GitHub lo exige'], a:0, why:'CI es la barrera real: un hook local es una comodidad, no una garantía.'} },
+
+  { id:'github', kicker:'GitHub · pull request', title:'main está protegida',
+    text:`<p>Trunk-based: ramas cortas <code>feature/DEVOPS-NN-…</code>, commits Conventional Commits y <b>todo entra por pull request</b>. La rama <code>main</code> exige cuatro checks en verde (<code>app</code>, <code>docker</code>, <code>security</code>, <code>terraform</code>), prohíbe el force-push y la regla aplica también a administradores.</p>`,
+    why:`<p>El repositorio es público: la protección de ramas funciona sin plan de pago y los evaluadores pueden leerlo. Por eso la barrera de secretos es obligatoria, no opcional.</p>`,
+    files:['.github/pull_request_template.md','.github/workflows/ci.yml'], cmd:`gh api repos/<owner>/<repo>/branches/main/protection --jq '.required_status_checks.contexts'`,
+    quiz:{q:'¿Qué ocurre si uno de los checks de un PR está en rojo?', o:['No se puede fusionar','Se fusiona igual si eres administrador','Se fusiona tras 24 horas'], a:0, why:'La regla incluye a los administradores (enforce_admins).'} },
+
+  { id:'ci', kicker:'GitHub Actions · pull_request', title:'CI: cuatro checks y cero credenciales',
+    text:`<p><code>app</code>: gofmt, vet y tests con <code>-race</code>. <code>docker</code>: hadolint, build y escaneo Trivy (falla en CRITICAL). <code>security</code>: los mismos hooks, gitleaks sobre todo el historial y una prueba de que la barrera bloquea secretos falsos. <code>terraform</code>: <code>fmt</code> y <code>validate</code>.</p>`,
+    why:`<p>CI no tiene credenciales de GCP y solo lee el repositorio: aunque alguien manipule un workflow en un PR, no puede tocar la nube. Las acciones de terceros están fijadas por SHA, no por tag.</p>`,
+    files:['.github/workflows/ci.yml','scripts/test-secret-hooks.sh'], cmd:`gh pr checks --watch`,
+    quiz:{q:'¿Tiene el CI credenciales de Google Cloud?', o:['Sí, una llave JSON','No: solo lee el repositorio','Sí, un token de larga vida'], a:1, why:'Sin credenciales, el CI no puede dañar la nube aunque se manipule.'} },
+
+  { id:'wif', kicker:'Autenticación · Workload Identity Federation', title:'Despliegue sin llaves (OIDC)',
+    text:`<p>Al fusionar a <code>main</code>, el workflow de deploy pide a GitHub un <b>token OIDC</b> de pocos minutos. <b>Workload Identity Federation</b> lo cambia por credenciales temporales de <code>sa-deployer</code>, pero solo si el token viene de <b>este repositorio</b> y de la rama <code>main</code>.</p>`,
+    why:`<p>Se descartó guardar una llave JSON en GitHub Secrets: es una credencial de larga vida que puede filtrarse. Aquí no hay nada permanente que robar.</p>`,
+    files:['infra/platform/wif.tf','.github/workflows/deploy.yml'], cmd:`gcloud iam workload-identity-pools providers describe github-provider --workload-identity-pool=github-pool --location=global --format='value(attributeCondition)'`,
+    quiz:{q:'Otro repositorio de GitHub intenta usar este provider. ¿Qué ocurre?', o:['Lo rechaza la attribute_condition','Funciona: GitHub es de confianza','Pide una contraseña'], a:0, why:'La condición exige repositorio y rama exactos.'} },
+
+  { id:'ar', kicker:'Artifact Registry', title:'Una imagen que no se puede mover',
+    text:`<p>El pipeline construye la imagen (multistage, usuario no-root, ~9 MB), la sube con el <b>SHA del commit</b> como tag y lee su <b>digest</b> (<code>sha256:…</code>). El repositorio tiene <b>tags inmutables</b>: un tag no puede reasignarse a otra imagen.</p>`,
+    why:`<p>Se despliega por digest, no por tag ni <code>:latest</code>: el digest identifica los bytes exactos. Trade-off conocido: con tags inmutables la limpieza automática no puede borrar imágenes con tag; cuesta centavos.</p>`,
+    files:['app/Dockerfile','infra/platform/artifact_registry.tf'], cmd:`gcloud artifacts docker images list us-central1-docker.pkg.dev/<project_id>/tramites/tramites-api --include-tags`,
+    quiz:{q:'¿Qué identifica exactamente a una imagen?', o:['Su tag','Su digest sha256','Su nombre'], a:1, why:'El tag es una etiqueta; el digest es la huella de los bytes.'} },
+
+  { id:'kms', kicker:'Cloud KMS · atestación', title:'Firmar el digest',
+    text:`<p>El pipeline pide a <b>Cloud KMS</b> que firme el digest con una llave asimétrica (ECDSA P-256). El resultado es una <b>atestación</b>: la prueba de que <i>este pipeline</i> construyó <i>esos bytes</i>. La llave privada nunca sale de KMS: <code>sa-deployer</code> puede pedir firmas, no leer la llave.</p>`,
+    why:`<p>Firmar el digest (no el tag) hace la firma inseparable de la imagen. Si alguien roba el pipeline, no se lleva la llave.</p>`,
+    files:['.github/workflows/deploy.yml','infra/platform/binauthz.tf'], cmd:`gcloud container binauthz attestations list --attestor=projects/<project_id>/attestors/pipeline-attestor --artifact-url=<imagen>@<digest>`,
+    quiz:{q:'¿Qué se firma?', o:['El tag','El digest','El nombre del repositorio'], a:1, why:'Un tag puede apuntar a otra cosa mañana; un digest no.'} },
+
+  { id:'gate', kicker:'Binary Authorization · política de admisión', title:'La puerta que solo abre con firma',
+    text:`<p>La política del proyecto exige que <b>toda</b> imagen tenga una atestación válida de <code>pipeline-attestor</code> (<code>REQUIRE_ATTESTATION</code>, <code>ENFORCED_BLOCK_AND_AUDIT_LOG</code>). Cloud Run la verifica al <b>crear cada revisión</b>. La imagen firmada pasa y el despliegue por digest continúa.</p>`,
+    why:`<p>No hay lista de excepciones. Se activó en dos tiempos en lugar de dejar una excepción permanente para la imagen inicial: una excepción permanente es un hueco.</p>`,
+    files:['infra/platform/binauthz.tf'], cmd:`gcloud container binauthz policy export`,
+    quiz:{q:'¿Cuándo verifica Cloud Run la política?', o:['Al crear cada revisión','Solo la primera vez','Cada hora'], a:0, why:'Cada revisión nueva debe pasar por la puerta.'} },
+
+  { id:'reject', kicker:'Parte B · la prueba', title:'El rechazo de una imagen sin firmar',
+    text:`<p>Una imagen subida a mano, sin atestación, llega a la puerta y es <b>rechazada</b>: <code>denied by attestor … No attestations found that were valid and signed by a key trusted by the attestor</code>. El servicio sigue sirviendo la revisión anterior.</p>`,
+    why:`<p>La denegación queda como evento de auditoría de Cloud Run. Existe el <i>break-glass</i> (<code>--breakglass</code>) para emergencias: también queda auditado, pero cualquier identidad que pueda actualizar el servicio podría usarlo; cerrarlo exige una política de organización.</p>`,
+    files:['scripts/demo-binauthz-reject.sh','docs/evidencias/binauthz-rechazo.txt'], cmd:`./scripts/demo-binauthz-reject.sh`,
+    quiz:{q:'Una imagen sin firmar intenta desplegarse. ¿Qué pasa con el tráfico actual?', o:['Se interrumpe','Sigue en la última revisión buena','Se divide 50/50'], a:1, why:'La revisión nueva falla al crearse y nunca recibe tráfico.'} },
+
+  { id:'run', kicker:'Cloud Run', title:'Pagas solo por lo que usas',
+    text:`<p><code>tramites-api</code> escala de <b>0 a 3 instancias</b> (1 vCPU, 512 Mi, CPU solo durante las solicitudes). Sin tráfico hay 0 instancias y el costo es ≈ 0. Tras cada despliegue, un <b>smoke test</b> llama a <code>/health</code> y comprueba estado, secreto y versión.</p>`,
+    why:`<p>El máximo de 3 instancias es el <b>tope duro</b> de gasto. Terraform es dueño de la plataforma y el pipeline solo cambia la imagen (<code>ignore_changes</code>): no se pisan.</p>`,
+    files:['infra/platform/cloud_run.tf','.github/workflows/deploy.yml'], cmd:`gcloud run revisions list --service tramites-api --region us-central1`,
+    quiz:{q:'¿Cuál es el tope duro de gasto del servicio?', o:['El presupuesto de USD 10','max_instance_count = 3','No hay tope'], a:1, why:'El presupuesto solo avisa; el máximo de instancias limita de verdad.'} },
+
+  { id:'secret', kicker:'Secret Manager', title:'El secreto nunca viaja con el código',
+    text:`<p><code>API_KEY</code> vive en <b>Secret Manager</b> (<code>api-key</code>). Terraform crea solo el <i>contenedor</i> del secreto y el permiso; el valor se carga con <code>gcloud secrets versions add</code>. Cloud Run lo inyecta al arrancar la instancia y la API solo informa <code>secret_configured: true</code>: <b>nunca</b> lo devuelve ni lo registra.</p>`,
+    why:`<p>Si el valor pasara por Terraform quedaría en texto plano en el estado. La versión está fijada (no <code>latest</code>) para que rotarlo sea un cambio explícito y revisable.</p>`,
+    files:['infra/platform/secrets.tf','app/main.go'], cmd:`gcloud secrets versions list api-key`,
+    quiz:{q:'¿Dónde está el valor de API_KEY?', o:['En el repositorio','En el estado de Terraform','Solo en Secret Manager'], a:2, why:'En ningún otro lugar: ni repo, ni estado, ni logs.'} },
+
+  { id:'iam', kicker:'IAM', title:'Mínimo privilegio',
+    text:`<p>Una cuenta de servicio por responsabilidad. <code>sa-runtime</code> solo lee <b>un</b> secreto. <code>sa-deployer</code> escribe en <b>un</b> repositorio, despliega <b>un</b> servicio, actúa como <b>una</b> cuenta y firma con <b>una</b> llave. Único permiso a nivel de proyecto: crear atestaciones (no admiten permisos por recurso).</p>`,
+    why:`<p>Ninguna cuenta tiene <code>editor</code> ni <code>owner</code>. Y la condición de WIF limita quién puede llegar a ser <code>sa-deployer</code>: este repositorio y esta rama.</p>`,
+    files:['infra/platform/iam.tf','README.md'], cmd:`gcloud projects get-iam-policy <project_id> --flatten='bindings[].members' --filter='bindings.members:sa-deployer' --format='value(bindings.role)'`,
+    quiz:{q:'¿Qué cuenta puede leer el secreto api-key?', o:['sa-deployer','sa-runtime','Las dos'], a:1, why:'Solo sa-runtime tiene secretAccessor, y solo sobre ese secreto.'} },
+
+  { id:'tf', kicker:'Infraestructura como código', title:'Terraform en dos capas',
+    text:`<p>El <b>bootstrap</b> (estado local) crea el bucket de estado versionado, habilita las APIs y define el presupuesto. La <b>plataforma</b> guarda su estado en ese bucket. Se aplica desde la estación de trabajo; CI solo hace <code>fmt</code> y <code>validate</code>.</p>`,
+    why:`<p>Resuelve el huevo y la gallina: el bucket del estado no puede guardar el estado de su propia creación. Aplicar desde CI exigiría darle permisos de Owner a una cuenta de CI; queda como pendiente.</p>`,
+    files:['infra/bootstrap/main.tf','infra/platform/backend.tf'], cmd:`terraform -chdir=infra/platform state list`,
+    quiz:{q:'¿Por qué existe un bootstrap separado?', o:['Para ahorrar costos','El bucket del estado no puede guardar el estado de su propia creación','Por orden visual'], a:1, why:'Es el problema del huevo y la gallina del backend remoto.'} },
+
+  { id:'cost', kicker:'Presupuesto', title:'Costos: avisar no es frenar',
+    text:`<p>Presupuesto de USD 10 con alertas al 50 %, 90 % y 100 % del gasto real y al 100 % del <b>pronóstico</b>. Un presupuesto <b>avisa, no corta</b> el gasto: el freno real es <code>max_instance_count</code>. Casi todo cae en la capa gratuita; KMS y el almacenamiento son centavos.</p>`,
+    why:`<p>Por eso el presupuesto se crea primero y se destruye al final, y por eso, ante el escenario de los USD 2,000, el control de fondo es técnico (topes) y no solo una alerta.</p>`,
+    files:['infra/bootstrap/main.tf','README.md'], cmd:`gcloud billing budgets list --billing-account=<billing_account_id>`,
+    quiz:{q:'Se alcanza el 100 % del presupuesto. ¿Qué ocurre?', o:['Se apagan los servicios','Se envía una alerta y nada más','Se borra el proyecto'], a:1, why:'Un presupuesto de GCP notifica; no detiene recursos por sí solo.'} },
+
+  { id:'end', kicker:'Cierre', title:'Qué queda por hacer (y qué se aprendió)',
+    text:`<p>Pendientes, con honestidad: Terraform en CI con detección de drift programada, restringir el break-glass con una política de organización, SLOs y alertas de latencia/errores, retención de imágenes compatible con la inmutabilidad, firma con cosign y SBOM, y ambientes dev/prod separados.</p>`,
+    why:`<p>Algo incompleto que se entiende bien vale más que algo completo que no se puede explicar. Todo se reproduce con los pasos de «Despliegue desde cero» del README.</p>`,
+    files:['README.md','CRITERIO.md'], cmd:`./scripts/setup-dev.sh`, quiz:null }
+];
+
+/* ---------- Utilidades de interfaz (no dependen de three.js) ---------- */
+const $ = (id)=>document.getElementById(id);
+const answers = new Array(STEPS.length).fill(null);   // índice elegido por paso; null = sin responder
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function renderFallback(reason){
+  $('fbIn').innerHTML = `<h1>Recorrido de tramites-platform</h1><p class="err">${reason}</p>` +
+    STEPS.map((s,i)=>`<article><div class="kicker">${i+1}. ${s.kicker}</div><h2>${s.title}</h2>${s.text}${s.why}
+      <div class="chips">${s.files.map(f=>`<span class="chip">${f}</span>`).join('')}</div></article>`).join('');
+  $('fallback').style.display='block';
+}
+
+/* ============================================================================================
+   ESCENA 3D
+   ============================================================================================ */
+let THREE;
+try { THREE = await import('three'); }
+catch(e){ console.error(e); renderFallback('No se pudo cargar three.js (¿sin conexión o bloqueado por la verificación de integridad?). Se muestra la versión de texto.'); throw e; }
+
+let renderer;
+try { renderer = new THREE.WebGLRenderer({canvas:$('c'), antialias:true}); }
+catch(e){ console.error(e); renderFallback('Tu navegador no tiene WebGL disponible. Se muestra la versión de texto.'); throw e; }
+renderer.setPixelRatio(Math.min(devicePixelRatio||1, 2));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b16);
+scene.fog = new THREE.FogExp2(0x070b16, 0.0058);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 700);
+scene.add(new THREE.HemisphereLight(0xa5b4fc, 0x0b1020, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.7); sun.position.set(40,70,30); scene.add(sun);
+
+const C = { teal:0x2dd4bf, purple:0xa78bfa, amber:0xfbbf24, blue:0x60a5fa, green:0x34d399, red:0xf87171, pink:0xf472b6, slate:0x94a3b8, dark:0x1b2442, white:0xe2e8f0 };
+const hex = (n)=>'#'+n.toString(16).padStart(6,'0');
+const V = (x=0,y=0,z=0)=>new THREE.Vector3(x,y,z);
+const clamp01 = (x)=>Math.min(1,Math.max(0,x));
+const ease = (x)=>{x=clamp01(x);return x*x*(3-2*x)};
+const seg = (t,a,b)=>clamp01((t-a)/(b-a));
+const lerp = (a,b,u)=>a+(b-a)*u;
+
+/* ---------- constructores de materiales y mallas ---------- */
+function mat(color,o={}){
+  return new THREE.MeshStandardMaterial({ color, roughness:o.rough??0.5, metalness:o.metal??0.2,
+    emissive:o.emissive??0x000000, emissiveIntensity:o.ei??1,
+    transparent:o.opacity!==undefined, opacity:o.opacity??1, depthWrite:o.opacity===undefined, side:o.side??THREE.FrontSide });
+}
+const mesh = (geo,color,o)=>new THREE.Mesh(geo,mat(color,o));
+const box  = (w,h,d,c,o)=>mesh(new THREE.BoxGeometry(w,h,d),c,o);
+const cyl  = (rt,rb,h,c,o,s=24)=>mesh(new THREE.CylinderGeometry(rt,rb,h,s),c,o);
+const sph  = (r,c,o)=>mesh(new THREE.SphereGeometry(r,20,14),c,o);
+const tor  = (r,t,c,o,arc=Math.PI*2)=>mesh(new THREE.TorusGeometry(r,t,12,48,arc),c,o);
+const outline = (m,color,op=0.9)=>new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), new THREE.LineBasicMaterial({color,transparent:true,opacity:op}));
+const place = (o,x,y,z)=>{o.position.set(x,y,z);return o;};
+const add = (parent,...kids)=>{kids.forEach(k=>parent.add(k));return parent;};
+
+/* ---------- etiquetas HTML ancladas a puntos 3D ---------- */
+const labels = [];
+function label(group,text,pos,o={}){
+  const el=document.createElement('div');
+  el.className='lbl '+(o.cls||'')+' hidden';
+  el.textContent=text;
+  if(o.color) el.style.borderColor=hex(o.color), el.style.color=hex(o.color);
+  $('labels').appendChild(el);
+  const l={el,group,kind:o.kind||'item',anchor:o.anchor||'top',pos:Array.isArray(pos)?V(...pos):pos.clone(),on:true,hid:true};
+  labels.push(l); return l;
+}
+const popup = (group,text,pos,color)=>{const l=label(group,text,pos,{cls:'pop',color}); l.on=false; return l;};
+const showPop = (l,on,text)=>{ if(text!==undefined && l.el.textContent!==text) l.el.textContent=text; l.on=on; };
+
+/* ---------- plataformas (islas) ---------- */
+function platform(group,name,cx,cz,w,d,color){
+  const g=new THREE.Group(); g.position.set(cx,0,cz);
+  const slab=box(w,0.8,d,0x0f1730,{rough:.85,metal:.1}); slab.position.y=-0.4; g.add(slab);
+  const e=outline(slab,color,.85); e.position.copy(slab.position); g.add(e);
+  const pts=[]; const hw=w/2, hd=d/2;
+  for(let x=-hw+2;x<hw;x+=2) pts.push(x,0.03,-hd,x,0.03,hd);
+  for(let z=-hd+2;z<hd;z+=2) pts.push(-hw,0.03,z,hw,0.03,z);
+  const gg=new THREE.BufferGeometry(); gg.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
+  g.add(new THREE.LineSegments(gg,new THREE.LineBasicMaterial({color,transparent:true,opacity:.13})));
+  scene.add(g);
+  label(group,name,[cx,0.4,cz+d/2],{cls:'zone',kind:'zone',color});
+  return g;
+}
+
+/* ---------- piezas reutilizables ---------- */
+function makePerson(color,hat){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.CapsuleGeometry(.5,1.1,4,10),mat(color,{emissive:color,ei:.18})); body.position.y=1.15; g.add(body);
+  g.add(place(sph(.45,0xf1d5b8),0,2.6,0));
+  if(hat){ const h=new THREE.Mesh(new THREE.SphereGeometry(.52,16,8,0,Math.PI*2,0,Math.PI/2),mat(hat,{emissive:hat,ei:.5})); h.position.y=2.72; g.add(h); }
+  return g;
+}
+function makeContainer(color){
+  const g=new THREE.Group();
+  const body=box(1.9,1.15,1.15,color,{emissive:color,ei:.4,metal:.4,rough:.35}); g.add(body);
+  for(const x of [-.55,0,.55]) g.add(place(box(.1,1.2,1.2,0x0b1220),x,0,0));
+  g.add(outline(body,0xffffff,.55));
+  g.userData.body=body; return g;
+}
+function makeSeal(){
+  const g=new THREE.Group();
+  const disc=cyl(.5,.5,.12,C.amber,{emissive:C.amber,ei:.9,metal:.6},6); disc.rotation.x=Math.PI/2; g.add(disc);
+  g.add(tor(.64,.06,0xfde68a,{emissive:C.amber,ei:1}));
+  g.position.set(0,.15,.66); g.visible=false; return g;
+}
+function makeVault(color){
+  const g=new THREE.Group();
+  const b=box(3.4,3.4,3.4,C.dark,{metal:.6,rough:.35}); b.position.y=1.7; g.add(b);
+  g.add(place(outline(b,color),0,1.7,0));
+  g.add(place(tor(1.05,.14,color,{emissive:color,ei:.8}),0,1.7,1.72));
+  const h1=box(.2,1.7,.2,color,{emissive:color,ei:.8}); h1.position.set(0,1.7,1.8); g.add(h1);
+  const h2=box(.2,1.7,.2,color,{emissive:color,ei:.8}); h2.position.set(0,1.7,1.8); h2.rotation.z=Math.PI/2; g.add(h2);
+  return g;
+}
+function makeGate(color){          // arco que se cruza a lo largo de X
+  const g=new THREE.Group();
+  for(const z of [-3.2,3.2]) g.add(place(box(.8,6,.8,C.dark,{metal:.5}),0,3,z));
+  const top=box(.8,.8,7.6,C.dark,{metal:.5}); top.position.y=6.1; g.add(top); g.add(place(outline(top,color),0,6.1,0));
+  const scan=new THREE.Mesh(new THREE.PlaneGeometry(5.6,5.2),new THREE.MeshBasicMaterial({color:C.green,transparent:true,opacity:.18,side:THREE.DoubleSide,depthWrite:false}));
+  scan.rotation.y=Math.PI/2; scan.position.y=2.8; g.add(scan);
+  const lamp=sph(.5,C.amber,{emissive:C.amber,ei:1.2}); lamp.position.set(0,7.1,0); g.add(lamp);
+  g.userData={scan,lamp}; return g;
+}
+function makeGear(color){
+  const g=new THREE.Group(); g.add(tor(1.15,.28,color,{emissive:color,ei:.5}));
+  for(let i=0;i<8;i++){ const a=i/8*Math.PI*2; const t=box(.5,.5,.5,color,{emissive:color,ei:.5}); t.position.set(Math.cos(a)*1.55,Math.sin(a)*1.55,0); t.rotation.z=a; g.add(t); }
+  return g;
+}
+function makeKey(color){
+  const g=new THREE.Group(); g.add(tor(.3,.08,color,{emissive:color,ei:1}));
+  g.add(place(box(.7,.1,.1,color,{emissive:color,ei:1}),.55,0,0));
+  g.add(place(box(.1,.28,.1,color,{emissive:color,ei:1}),.75,-.14,0)); return g;
+}
+function makeDoc(color){ const g=new THREE.Group(); g.add(box(1.1,1.4,.08,color,{emissive:color,ei:.5})); for(let i=0;i<3;i++) g.add(place(box(.7,.07,.1,0xffffff,{emissive:0xffffff,ei:.5}),0,.35-i*.3,.06)); return g; }
+
+function makeBeam(color){
+  const geo=new THREE.BufferGeometry().setFromPoints([V(),V(0,0,1)]);
+  const line=new THREE.Line(geo,new THREE.LineDashedMaterial({color,dashSize:.6,gapSize:.4,transparent:true,opacity:.85}));
+  line.frustumCulled=false;
+  const dot=sph(.26,color,{emissive:color,ei:1.3});
+  line.visible=false; dot.visible=false; scene.add(line,dot);
+  return {line,dot,a:V(),b:V()};
+}
+function setBeam(bm,a,b){ const p=bm.line.geometry.attributes.position; p.setXYZ(0,a.x,a.y,a.z); p.setXYZ(1,b.x,b.y,b.z); p.needsUpdate=true; bm.line.computeLineDistances(); bm.a.copy(a); bm.b.copy(b); }
+const beamDot = (bm,u)=>bm.dot.position.lerpVectors(bm.a,bm.b,u);
+
+/* ============================================================================================
+   MUNDO
+   ============================================================================================ */
+const O = {};                      // objetos nombrados
+const idle = [];                   // animaciones continuas: (time,dt)=>void
+
+// fondo: estrellas
+{ const n=700, arr=new Float32Array(n*3);
+  for(let i=0;i<n;i++){ arr[i*3]=-140+Math.random()*320; arr[i*3+1]=14+Math.random()*80; arr[i*3+2]=-110+Math.random()*190; }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position',new THREE.BufferAttribute(arr,3));
+  O.stars=new THREE.Points(g,new THREE.PointsMaterial({color:0x93c5fd,size:.5,transparent:true,opacity:.55,depthWrite:false}));
+  scene.add(O.stars); idle.push((t)=>{O.stars.rotation.y=t*0.004;}); }
+
+// plataformas
+platform('laptop','Tu laptop',-46,0,14,14,C.teal);
+platform('gh','GitHub',-26,0,14,16,C.purple);
+platform('ci','GitHub Actions',-4,0,18,18,C.amber);
+platform('gcp','Google Cloud · us-central1',38,2,62,36,C.blue);
+platform('citizen','Internet',78,0,10,10,C.slate);
+platform('tf','Terraform · bootstrap y plataforma',38,34,44,18,C.pink);
+
+/* ---- laptop + escudo de hooks ---- */
+{ const g=new THREE.Group(); g.position.set(-46,0,0);
+  g.add(place(box(5,.3,3.4,C.dark,{metal:.5}),0,.15,0));
+  const scr=box(5,3.2,.2,C.dark,{metal:.4}); scr.position.set(0,1.95,-1.7); scr.rotation.x=-.25; g.add(scr);
+  const cv=document.createElement('canvas'); cv.width=320; cv.height=180; const cx=cv.getContext('2d');
+  cx.fillStyle='#050810'; cx.fillRect(0,0,320,180); cx.font='15px monospace'; cx.fillStyle='#34d399';
+  ['$ git add .','$ git commit -m "feat: ..."','','pre-commit hooks:','  gitleaks ........ ok','  detect-private-key ok','  conventional ..... ok'].forEach((s,i)=>cx.fillText(s,12,26+i*22));
+  const sp=new THREE.Mesh(new THREE.PlaneGeometry(4.6,2.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(cv)}));
+  sp.position.set(0,1.95,-1.58); sp.rotation.x=-.25; g.add(sp);
+  scene.add(g); O.laptop=g;
+  O.shield=cyl(1.7,1.7,.25,C.green,{emissive:C.green,ei:.7,opacity:.6},6); O.shield.rotation.z=Math.PI/2; O.shield.position.set(-41,2.8,0); scene.add(O.shield);
+  O.shieldRing=tor(1.95,.07,C.green,{emissive:C.green,ei:1}); O.shieldRing.rotation.y=Math.PI/2; O.shieldRing.position.copy(O.shield.position); scene.add(O.shieldRing);
+  O.secret=makeKey(C.red); O.secret.visible=false; scene.add(O.secret);
+  O.commit=box(1.1,.8,.8,C.green,{emissive:C.green,ei:.6}); O.commit.visible=false; scene.add(O.commit);
+  label('laptop','pre-commit · gitleaks',[-41,5.2,0],{color:C.green});
+  label('laptop','tu código',[-46,4.4,-1.2],{color:C.teal});
+  O.pLaptop1=popup('laptop','🚫 gitleaks: secreto detectado · commit bloqueado',[-41,6.8,0],C.red);
+  O.pLaptop2=popup('laptop','✔ commit aceptado',[-41,6.8,0],C.green);
+  idle.push((t)=>{O.shieldRing.rotation.x=t*.8;}); }
+
+/* ---- GitHub: repo, puerta de PR con 4 checks, main ---- */
+{ O.repo=new THREE.Group(); O.repo.position.set(-30,0,0);
+  [0,.6,1.2].forEach((y,i)=>O.repo.add(place(box(3.2,.5,2.4,C.purple,{emissive:C.purple,ei:.25+i*.1}),0,.4+y,0)));
+  scene.add(O.repo);
+  O.ghGate=makeGate(C.purple); O.ghGate.position.set(-25,0,0); scene.add(O.ghGate);
+  O.ghGate.userData.scan.visible=false; O.ghGate.userData.lamp.visible=false;
+  O.arm=box(.35,.35,6.2,C.amber,{emissive:C.amber,ei:.6}); O.arm.position.set(-25,2.2,0); scene.add(O.arm);
+  O.lights=[]; const names=['app','docker','security','terraform'];
+  const pole=box(.25,5,.25,C.dark,{metal:.4}); pole.position.set(-25.9,3.1,5.45); scene.add(pole);
+  names.forEach((n,i)=>{ const y=5.4-i*1.1; const L=sph(.34,C.amber,{emissive:C.amber,ei:1}); L.position.set(-25.9,y,5.45); scene.add(L); O.lights.push(L);
+    label('gh',n,[-24.8,y,5.45],{color:C.slate,anchor:'right'}); });
+  O.main=box(2.6,1.5,2.6,C.green,{emissive:C.green,ei:.3}); O.main.position.set(-20.6,.75,-4); scene.add(O.main);
+  O.pr=box(1.2,.8,.9,C.purple,{emissive:C.purple,ei:.7}); O.pr.visible=false; scene.add(O.pr);
+  label('gh','repositorio público',[-30,3.2,0],{color:C.purple});
+  label('gh','main',[-20.6,2.5,-4],{color:C.green});
+  O.pGh1=popup('gh','Pull request: esperando 4 checks…',[-25,9.2,0],C.amber);
+  O.pGh2=popup('gh','4/4 en verde → se puede fusionar',[-25,9.2,0],C.green);
+  O.pGh3=popup('gh','sin force-push · sin commits directos',[-20.6,4.2,-4],C.green); }
+
+/* ---- GitHub Actions: cabinas de CI y máquina de deploy ---- */
+{ O.booths=[]; const info=[['app','gofmt · vet · test -race'],['docker','hadolint · build · Trivy'],['security','hooks · gitleaks · prueba de barrera'],['terraform','fmt · validate']];
+  info.forEach(([n,sub],i)=>{ const z=-6+i*4, x=-12+i*2.4; const g=new THREE.Group(); g.position.set(x,0,z);
+    const b=box(3.4,2.2,3,C.dark,{metal:.4}); b.position.y=1.1; g.add(b); g.add(place(outline(b,C.amber,.6),0,1.1,0));
+    const lamp=sph(.4,C.slate,{emissive:C.slate,ei:.3}); lamp.position.set(0,2.8,0); g.add(lamp); g.userData.lamp=lamp; g.userData.body=b;
+    scene.add(g); O.booths.push(g);
+    label('ci',n+' · '+sub,[x,4.2,z],{color:C.amber}); });
+  const m=new THREE.Group(); m.position.set(0,0,0);
+  const mb=box(4.2,3,3.4,C.dark,{metal:.5}); mb.position.y=1.5; m.add(mb); m.add(place(outline(mb,C.amber),0,1.5,0));
+  O.gear=makeGear(C.amber); O.gear.position.set(0,1.8,1.75); m.add(O.gear);
+  scene.add(m); O.deploy=m; idle.push((t)=>{O.gear.rotation.z=-t*1.2;});
+  label('deploy','deploy.yml · push a main',[0,4.4,0],{color:C.amber});
+  label('ci','sin credenciales de GCP',[-4,8.2,0],{color:C.red});
+  O.pCi=popup('ci','4 / 4 ✔ listo para fusionar',[-4,10,0],C.green);
+  O.ciPkt=box(1,.7,.8,C.purple,{emissive:C.purple,ei:.7}); O.ciPkt.visible=false; scene.add(O.ciPkt); }
+
+/* ---- Workload Identity Federation y sa-deployer ---- */
+{ O.wifRing=tor(3,.3,C.blue,{emissive:C.blue,ei:.8}); O.wifRing.rotation.y=Math.PI/2; O.wifRing.position.set(10,3.4,0); scene.add(O.wifRing);
+  O.wifRing2=tor(2.3,.08,C.green,{emissive:C.green,ei:1}); O.wifRing2.rotation.y=Math.PI/2; O.wifRing2.position.copy(O.wifRing.position); scene.add(O.wifRing2);
+  O.deployer=makePerson(C.amber,C.amber); O.deployer.position.set(14,0,0); scene.add(O.deployer);
+  O.coin=cyl(.5,.5,.12,C.blue,{emissive:C.blue,ei:1},24); O.coin.rotation.z=Math.PI/2; O.coin.visible=false; scene.add(O.coin);
+  O.badCoin=cyl(.5,.5,.12,C.slate,{emissive:C.slate,ei:.5},24); O.badCoin.rotation.z=Math.PI/2; O.badCoin.visible=false; scene.add(O.badCoin);
+  label('wif','Workload Identity Federation · github-pool',[10,7.3,0],{color:C.blue});
+  label('wif','sa-deployer',[14,5.7,0],{color:C.amber});
+  O.pWif1=popup('wif','token OIDC de GitHub (minutos)',[3,5.4,0],C.blue);
+  O.pWif2=popup('wif','✔ repo + rama main → credencial temporal',[12,9,0],C.green);
+  O.pWif3=popup('wif','✗ otro repositorio: attribute_condition lo rechaza',[8,9.2,3],C.red);
+  idle.push((t)=>{O.wifRing.rotation.x=t*.4;O.wifRing2.rotation.x=-t*.7;}); }
+
+/* ---- Artifact Registry ---- */
+{ O.rack=new THREE.Group(); O.rack.position.set(22,0,-10);
+  for(const y of [.9,2.5,4.1]) O.rack.add(place(box(7,.18,2.6,C.dark,{metal:.5}),0,y,0));
+  for(const x of [-3.4,3.4]) O.rack.add(place(box(.2,4.4,2.6,C.blue,{emissive:C.blue,ei:.25}),x,2.2,0));
+  O.rack.add(place(outline(box(7,4.4,2.6,C.dark),C.blue,.5),0,2.2,0));
+  const slots=[]; for(const y of [.9,2.5,4.1]) for(const x of [-2.4,-.8,.8,2.4]){ if(y===4.1&&x===2.4) continue; const c=box(1.3,.9,1,C.slate,{emissive:C.slate,ei:.2}); c.position.set(x,y+.55,0); O.rack.add(c); slots.push(c); }
+  scene.add(O.rack);
+  O.lock=new THREE.Group(); O.lock.add(box(.7,.55,.3,C.amber,{emissive:C.amber,ei:.8})); O.lock.add(place(tor(.22,.06,C.amber,{emissive:C.amber,ei:.8},Math.PI),0,.35,0)); O.lock.position.set(24.4,5.75,-8.7); O.lock.visible=false; scene.add(O.lock);
+  label('ar','Artifact Registry · repo tramites',[22,6.7,-10],{color:C.blue});
+  O.pAr1=popup('ar','tramites-api:<sha-del-commit>',[24.4,8.2,-10],C.teal);
+  O.pAr2=popup('ar','@sha256:… (el digest)',[24.4,9.6,-10],C.green);
+  O.pAr3=popup('ar','🔒 tag inmutable: no se puede reasignar',[19,8.2,-8],C.red);
+  O.arSlot=V(24.4,4.75,-10); }
+
+/* ---- Cloud KMS ---- */
+{ O.vault=makeVault(C.amber); O.vault.position.set(22,0,10); O.vault.rotation.y=-Math.PI/2; scene.add(O.vault);
+  O.kmsKey=makeKey(C.amber); O.kmsKey.position.set(22,5.3,10); scene.add(O.kmsKey);
+  label('kms','Cloud KMS · pipeline-signer',[22,6.9,10],{color:C.amber});
+  label('kms','la llave privada nunca sale de aquí',[22,4.6,10],{color:C.amber});
+  O.pKms1=popup('kms','firma ECDSA P-256 sobre el digest',[16,5.3,10],C.amber);
+  O.pKms2=popup('kms','atestación creada ✔',[16,6.9,10],C.green);
+  idle.push((t)=>{O.kmsKey.position.y=5.3+Math.sin(t*2)*.15;O.kmsKey.rotation.y=t;}); }
+
+/* ---- Binary Authorization ---- */
+{ O.gate=makeGate(C.green); O.gate.position.set(34,0,0); scene.add(O.gate);
+  label('gate','Binary Authorization',[34,8.6,0],{color:C.green});
+  label('gate','REQUIRE_ATTESTATION · sin excepciones',[34,7.9,0],{color:C.slate});
+  O.pGate1=popup('gate','atestación válida ✔ → pasa',[34,10.2,0],C.green);
+  O.pGate2=popup('gate','denied by attestor: no attestations found',[34,10.2,0],C.red);
+  O.pGate3=popup('gate','el tráfico sigue en la revisión anterior',[28,6.2,5],C.amber); }
+
+/* ---- Cloud Run + ciudadano ---- */
+{ O.run=new THREE.Group(); O.run.position.set(46,0,0);
+  const b=box(7,2.2,5,C.dark,{metal:.4}); b.position.y=1.1; O.run.add(b); O.run.add(place(outline(b,C.blue),0,1.1,0));
+  O.inst=[]; [-2.2,0,2.2].forEach((x)=>{ const i=box(1.5,1.5,1.5,C.blue,{emissive:C.blue,ei:.6}); i.position.set(x,3.1,0); i.scale.setScalar(.001); O.run.add(i); O.inst.push(i); });
+  scene.add(O.run);
+  O.citizen=makePerson(C.teal); O.citizen.position.set(78,0,0); scene.add(O.citizen);
+  O.req=[]; for(let i=0;i<6;i++){ const d=sph(.24,C.teal,{emissive:C.teal,ei:1}); d.visible=false; scene.add(d); O.req.push(d); }
+  O.runLbl=label('run','Cloud Run · tramites-api',[46,5.6,0],{color:C.blue});
+  O.instLbl=label('run','0 instancias',[46,4.7,0],{color:C.slate});
+  label('citizen','ciudadano',[78,4.2,0],{color:C.teal});
+  O.pRun1=popup('run','0 instancias ≈ USD 0',[46,7.6,0],C.green);
+  O.pRun2=popup('run','tope: 3 instancias (max_instance_count)',[46,7.6,0],C.amber);
+  O.pRun3=popup('run','GET /health · /v1/tramites/{número}',[62,3.2,0],C.teal); }
+
+/* ---- Secret Manager y sa-runtime ---- */
+{ O.sVault=makeVault(C.amber); O.sVault.position.set(46,0,14); O.sVault.rotation.y=0; scene.add(O.sVault);
+  O.runtime=makePerson(C.green); O.runtime.position.set(41,0,8); scene.add(O.runtime);
+  O.keyTravel=makeKey(C.amber); O.keyTravel.visible=false; scene.add(O.keyTravel);
+  O.sBeam=makeBeam(C.amber);
+  label('secret','Secret Manager · api-key',[46,5.8,14],{color:C.amber});
+  label('secret','sa-runtime',[41,5.7,8],{color:C.green});
+  O.mask=label('secret','API_KEY = ••••••••',[46,7.4,0],{color:C.slate}); O.mask.on=false;
+  O.pSec1=popup('secret','Cloud Run inyecta la clave al arrancar',[44,9,7],C.amber);
+  O.pSec2=popup('secret','GET /health → "secret_configured": true',[46,9,0],C.green);
+  O.pSec3=popup('secret','✗ el valor nunca pasa por Terraform ni por Git',[46,9.4,14],C.red); }
+
+/* ---- Terraform: bootstrap, bucket de estado, plataforma, presupuesto ---- */
+{ O.bootstrap=box(3.2,2.2,3,C.dark,{metal:.4}); O.bootstrap.position.set(27,1.1,31); scene.add(O.bootstrap); O.bootstrap.add(outline(O.bootstrap,C.pink));
+  O.platformBox=box(3.2,2.2,3,C.dark,{metal:.4}); O.platformBox.position.set(49,1.1,31); scene.add(O.platformBox); O.platformBox.add(outline(O.platformBox,C.pink));
+  O.bucket=new THREE.Mesh(new THREE.CylinderGeometry(2.8,2.4,3.4,32,1,true),mat(C.blue,{emissive:C.blue,ei:.3,opacity:.3,side:THREE.DoubleSide}));
+  O.bucket.position.set(38,1.7,31); scene.add(O.bucket);
+  O.layers=[0,1,2].map(i=>{ const d=cyl(2.2,2.2,.18,C.blue,{emissive:C.blue,ei:.7},32); d.position.set(38,.5+i*.5,31); d.visible=false; scene.add(d); return d; });
+  O.stateDoc=makeDoc(C.pink); O.stateDoc.visible=false; scene.add(O.stateDoc);
+  O.tfBeam1=makeBeam(C.pink); setBeam(O.tfBeam1,V(29,1.6,31),V(35.4,1.6,31)); O.tfBeam2=makeBeam(C.pink); setBeam(O.tfBeam2,V(47,1.6,31),V(40.6,1.6,31));
+  label('tf','bootstrap · estado local',[27,3.6,31],{color:C.pink});
+  label('tf','bucket <proyecto>-tfstate · versionado',[38,4.6,31],{color:C.blue});
+  label('tf','platform · estado remoto',[49,3.6,31],{color:C.pink});
+  O.pTf1=popup('tf','crea bucket + APIs + presupuesto',[31,6.4,31],C.pink);
+  O.pTf2=popup('tf','cada apply guarda una versión del estado',[44,6.8,31],C.blue);
+  O.pTf3=popup('tf','CI: solo fmt + validate · apply desde tu máquina',[38,8.4,31],C.amber);
+  // presupuesto
+  O.gauge=new THREE.Group(); O.gauge.position.set(38,.6,39.2);
+  O.gauge.add(tor(3,.22,C.dark,{metal:.4},Math.PI));
+  [[.5,C.amber],[.9,C.amber],[1,C.red]].forEach(([p,c])=>{ const a=Math.PI*(1-p); O.gauge.add(place(box(.16,.7,.3,c,{emissive:c,ei:1}),Math.cos(a)*3,Math.sin(a)*3,0)); });
+  O.needlePivot=new THREE.Group(); O.needlePivot.add(place(box(2.7,.14,.14,C.red,{emissive:C.red,ei:.8}),1.35,0,0)); O.needlePivot.rotation.z=Math.PI; O.gauge.add(O.needlePivot);
+  O.gauge.add(sph(.3,C.slate)); scene.add(O.gauge);
+  O.bell=new THREE.Group(); O.bell.add(new THREE.Mesh(new THREE.ConeGeometry(.7,1,16),mat(C.amber,{emissive:C.amber,ei:.8}))); O.bell.add(place(sph(.18,C.amber,{emissive:C.amber,ei:1}),0,-.65,0)); O.bell.position.set(44.5,2.2,39.2); O.bell.visible=false; scene.add(O.bell);
+  O.cap=new THREE.Group(); [-1.6,1.6].forEach(x=>O.cap.add(place(box(.4,3,.4,C.dark,{metal:.5}),x,1.5,0))); O.cap.add(place(box(3.6,.4,.4,C.green,{emissive:C.green,ei:.8}),0,3,0)); O.cap.position.set(30.5,0,39.2); scene.add(O.cap);
+  label('cost','presupuesto USD 10',[38,4.6,39.2],{color:C.pink});
+  label('cost','tope real: max_instance_count = 3',[30.5,4.4,39.2],{color:C.green});
+  O.pCost1=popup('cost','50 % → correo',[41,6.8,39.2],C.amber);
+  O.pCost2=popup('cost','90 % → correo',[41,6.8,39.2],C.amber);
+  O.pCost3=popup('cost','100 % → correo… y nada se apaga',[41,6.8,39.2],C.red);
+  O.pCost4=popup('cost','avisa, no corta · el freno es técnico',[38,8.4,39.2],C.green); }
+
+/* ---- IAM: rayos de permisos ---- */
+{ O.iamBeams=[];
+  const t=[ ['deployer','ar',V(14,2.8,0),V(22,3.6,-10),C.blue,'artifactregistry.writer · solo el repo'],
+            ['deployer','run',V(14,2.8,0),V(46,3.2,0),C.blue,'run.developer · solo el servicio'],
+            ['deployer','rt',V(14,2.8,0),V(41,2.8,8),C.green,'serviceAccountUser · solo sa-runtime'],
+            ['deployer','kms',V(14,2.8,0),V(22,2.8,10),C.amber,'signerVerifier · solo esa llave'],
+            ['deployer','proj',V(14,2.8,0),V(30,13,-4),C.red,'occurrences.editor · PROYECTO (única excepción)'],
+            ['runtime','sec',V(41,2.8,8),V(46,2.8,14),C.green,'secretAccessor · solo api-key'] ];
+  t.forEach(([,,a,b,c,txt])=>{ const bm=makeBeam(c); setBeam(bm,a,b); const mid=a.clone().lerp(b,.72); mid.y+=1.3; bm.lbl=label('iam',txt,mid,{color:c}); bm.lbl.on=false; O.iamBeams.push(bm); });
+  O.proj=tor(2.2,.1,C.red,{emissive:C.red,ei:1}); O.proj.rotation.x=Math.PI/2; O.proj.position.set(30,13,-4); O.proj.visible=false; scene.add(O.proj);
+  label('iam','proyecto',[30,15,-4],{color:C.red});
+  [['sa-deployer',[14,6.4,0],C.amber],['sa-runtime',[41,7.4,8],C.green],['Artifact Registry',[22,6.8,-10],C.blue],['Cloud KMS',[22,5.8,10],C.amber],['Cloud Run',[46,5.6,0],C.blue],['Secret Manager',[46,6.6,14],C.amber]]
+    .forEach(([t,p,c])=>label('iam',t,p,{color:c})); }
+
+// notas del cierre
+[ ['Terraform en CI + detección de drift',[-36,10,0]], ['break-glass restringido por política',[-16,17,0]], ['SLOs y alertas de errores',[4,10,0]],
+  ['retención de imágenes con tags inmutables',[24,17,0]], ['firma con cosign + SBOM',[44,10,0]], ['ambientes dev / prod separados',[64,17,0]] ]
+  .forEach(([t,p])=>label('end','▫ '+t,p,{cls:'note',color:C.pink}));
+
+/* ---- piezas transitorias compartidas ---- */
+O.hero=makeContainer(C.teal); O.seal=makeSeal(); O.hero.add(O.seal); O.hero.visible=false; scene.add(O.hero);
+O.evil=makeContainer(C.red); O.evil.visible=false; scene.add(O.evil);
+O.amberCt=makeContainer(C.amber); O.amberCt.visible=false; scene.add(O.amberCt);
+O.heroLbl=label('hero','',[0,0,0],{cls:'pop',color:C.teal}); O.heroLbl.on=false;
+
+/* ============================================================================================
+   RUTAS Y COMPORTAMIENTO POR PASO
+   ============================================================================================ */
+function route(points){
+  const curve=new THREE.CatmullRomCurve3(points.map(p=>V(...p)),false,'centripetal');
+  const cum=[0]; for(let i=1;i<points.length;i++) cum.push(cum[i-1]+V(...points[i]).distanceTo(V(...points[i-1])));
+  const frac=cum.map(c=>c/cum[cum.length-1]);
+  return {at:(u,out)=>curve.getPointAt(clamp01(u),out||V()), frac};
+}
+const R_ALL=route([[-45,2.4,0],[-30,2.6,0],[-25,2.2,0],[-21,2.4,0],[-6,2.6,0],[0,3.4,0],[10,3.4,0],[22,3.6,-6],[24.4,4.9,-10],[16,3.6,0],[18.6,2.2,10],[28,2.2,4],[34,2.2,0],[42.5,2.2,0]]);
+
+const hero=O.hero, evil=O.evil;
+const tmp=V();
+const hide=(...xs)=>xs.forEach(x=>x.visible=false);
+
+function resetStage(){
+  hide(O.hero,O.evil,O.amberCt,O.secret,O.commit,O.pr,O.ciPkt,O.coin,O.badCoin,O.lock,O.keyTravel,O.stateDoc,O.bell,O.proj,O.sBeam.line,O.sBeam.dot,O.tfBeam1.line,O.tfBeam1.dot,O.tfBeam2.line,O.tfBeam2.dot);
+  O.seal.visible=false; O.seal.scale.setScalar(1);
+  O.req.forEach(d=>d.visible=false);
+  O.iamBeams.forEach(b=>{b.line.visible=false;b.dot.visible=false;b.lbl.on=false;});
+  labels.forEach(l=>{ if(l.el.classList.contains('pop')) l.on=false; });
+  O.mask.on=false; O.heroLbl.on=false;
+  O.lights.forEach(L=>{L.material.color.setHex(C.amber);L.material.emissive.setHex(C.amber);});
+  O.booths.forEach(b=>{b.userData.lamp.material.color.setHex(C.slate);b.userData.lamp.material.emissive.setHex(C.slate);});
+  O.arm.rotation.x=0; O.arm.position.y=2.2;
+  setGate(O.gate,null); O.inst.forEach(i=>i.scale.setScalar(.001));
+  O.layers.forEach(l=>l.visible=false); O.bucket.scale.y=1; O.needlePivot.rotation.z=Math.PI;
+  O.instLbl.el.textContent='0 instancias'; O.shield.material.color.setHex(C.green); O.shield.material.emissive.setHex(C.green);
+}
+function setGate(g,state){ // null=en reposo, 'ok', 'bad'
+  const {scan,lamp}=g.userData; const col=state==='ok'?C.green:state==='bad'?C.red:C.amber;
+  scan.material.color.setHex(state==='bad'?C.red:C.green); scan.material.opacity=state?0.34:0.14;
+  lamp.material.color.setHex(col); lamp.material.emissive.setHex(col);
+}
+function paint(m,c){ m.material.color.setHex(c); m.material.emissive.setHex(c); }
+
+const BEH = {};
+const view=(look,pos)=>({look:V(...look),pos:V(...pos)});
+
+BEH.intro={ cam:view([16,0,6],[14,80,112]), focus:['zones'], L:20, tick(t){
+  const k=(t%this.L)/this.L; const p=R_ALL.at(k); hero.visible=true; hero.position.copy(p); hero.scale.setScalar(3);
+  O.seal.visible=k>R_ALL.frac[10]; } };
+
+BEH.laptop={ cam:view([-45,2.5,0],[-53,11,20]), focus:['laptop'], L:9, tick(t){
+  const k=t%this.L;
+  // secreto falso: se acerca al escudo y rebota
+  O.secret.visible=k<3.6; O.commit.visible=k>5.2;
+  if(k<3.6){ const u=k<2.4?ease(k/2.4):1-ease((k-2.4)/1.2); O.secret.position.set(lerp(-44.5,-42.6,u),2.6,0);
+    if(k>2.3&&k<3.5){ paint(O.shield,C.red); O.shieldRing.material.color.setHex(C.red); showPop(O.pLaptop1,true);} }
+  if(k>=3.6){ paint(O.shield,C.green); O.shieldRing.material.color.setHex(C.green); showPop(O.pLaptop1,k<5.6); }
+  // commit legítimo
+  if(k>5.2){ const u=ease(seg(k,5.2,8.4)); O.commit.position.set(lerp(-44.5,-34,u),2.6,0); showPop(O.pLaptop2,k>6.4); }
+  else showPop(O.pLaptop2,false);
+  if(k>5.2&&k<6.8) paint(O.shield,C.green);
+} };
+
+BEH.github={ cam:view([-26,2.5,0],[-34,12,22]), focus:['gh'], L:11, tick(t){
+  const k=t%this.L; O.pr.visible=true;
+  const approach=ease(seg(k,.3,1.8)); O.pr.position.set(lerp(-30,-26.6,approach),2.4,0);
+  showPop(O.pGh1,k>1.8&&k<5.4);
+  O.lights.forEach((L,i)=>{ const c=k>2+i*0.9?C.green:C.amber; L.material.color.setHex(c); L.material.emissive.setHex(c); });
+  const armU=ease(seg(k,5.8,6.6)); O.arm.position.y=lerp(2.2,6.8,armU);
+  showPop(O.pGh2,k>5.4&&k<8.6);
+  if(k>6.6){ const u=ease(seg(k,6.6,8.6)); O.pr.position.set(lerp(-26.6,-20.6,u),lerp(2.4,2.1,u),lerp(0,-4,u)); }
+  showPop(O.pGh3,k>8.8);
+} };
+
+BEH.ci={ cam:view([-6,2,0],[-17,13,21]), focus:['ci'], L:13, tick(t){
+  const k=t%this.L; O.ciPkt.visible=true;
+  const u=ease(seg(k,.6,10)); const z=lerp(-8,8,u); O.ciPkt.position.set(-12+.6*(z+6),2.4,z);
+  O.booths.forEach((b,i)=>{ const zc=-6+i*4; const d=Math.abs(z-zc); const lamp=b.userData.lamp;
+    const c = (u>0&&z>zc+1) ? C.green : (d<1.6 ? C.amber : C.slate);
+    lamp.material.color.setHex(c); lamp.material.emissive.setHex(c); });
+  showPop(O.pCi,k>10.4);
+} };
+
+BEH.wif={ cam:view([4,3,0],[-6,12,24]), focus:['deploy','wif','gcp'], L:13, tick(t){
+  const k=t%this.L;
+  // coin legítima
+  if(k<8){ O.coin.visible=true;
+    if(k<3.6){ const u=ease(k/3.6); O.coin.position.set(lerp(0,9,u),lerp(3.8,3.4,u),0); paint(O.coin,C.blue); showPop(O.pWif1,k>.4); }
+    else { showPop(O.pWif1,false); paint(O.coin,C.green); const u=ease(seg(k,3.6,6)); O.coin.position.set(lerp(9,13.2,u),lerp(3.4,2.8,u),0); showPop(O.pWif2,k>5); }
+    O.coin.scale.setScalar(k>6?lerp(1,.2,seg(k,6,8)):1); if(k>7.9) O.coin.visible=false; }
+  else showPop(O.pWif2,false);
+  // moneda de otro repo
+  O.badCoin.visible=k>8; if(k<=8) showPop(O.pWif3,false);
+  if(k>8){ const u=k<10.4?ease(seg(k,8,10.4)):1-ease(seg(k,10.4,11.6)); O.badCoin.position.set(lerp(0,7.2,u),lerp(3.8,3.4,u),3); showPop(O.pWif3,k>10&&k<12.8); }
+} };
+
+BEH.ar={ cam:view([22,3,-8],[13,12,12]), focus:['ar','gcp'], L:13, tick(t){
+  const k=t%this.L; hero.visible=true; hero.scale.setScalar(1);
+  const u=ease(seg(k,.2,3.6)); const a=V(14,2.8,0),b=V(21,3.8,-5.5),c=O.arSlot;
+  if(u<.6) hero.position.lerpVectors(a,b,u/.6); else hero.position.lerpVectors(b,c,(u-.6)/.4);
+  showPop(O.pAr1,k>3.4); showPop(O.pAr2,k>5);
+  O.lock.visible=k>4.2;
+  O.amberCt.visible=k>7.2; if(k<=7.2) showPop(O.pAr3,false);
+  if(k>7.2){ const w=k<9.4?ease(seg(k,7.2,9.4)):1-ease(seg(k,9.4,10.4)); O.amberCt.position.set(lerp(15,22.9,w),lerp(3,4.9,w),lerp(-3,-10,w)); showPop(O.pAr3,k>9&&k<12.4); }
+} };
+
+BEH.kms={ cam:view([21,2.5,6],[8,10,24]), focus:['kms','gcp'], L:12, tick(t){
+  const k=t%this.L; hero.visible=true; hero.scale.setScalar(1);
+  const u=ease(seg(k,.2,4)); const a=O.arSlot,b=V(16,3.4,-1),c=V(18.6,2.1,10);
+  if(u<.55) hero.position.lerpVectors(a,b,u/.55); else hero.position.lerpVectors(b,c,(u-.55)/.45);
+  showPop(O.pKms1,k>4&&k<7);
+  O.seal.visible=k>5; if(k>5){ const s=ease(seg(k,5,5.7)); O.seal.scale.setScalar(lerp(2.6,1,s)); }
+  showPop(O.pKms2,k>6.4);
+} };
+
+BEH.gate={ cam:view([34,3,0],[22,11,19]), focus:['gate','gcp'], L:10, tick(t){
+  const k=t%this.L; hero.visible=true; hero.scale.setScalar(1); O.seal.visible=true;
+  const u=ease(seg(k,.2,7)); hero.position.set(lerp(24,43,u),2.2,0);
+  const near=Math.abs(hero.position.x-34)<3.2; setGate(O.gate,near?'ok':null);
+  showPop(O.pGate1,near||k>5.5&&k<8.2);
+} };
+
+BEH.reject={ cam:view([32,3,0],[21,10,17]), focus:['gate','gcp'], L:12, tick(t){
+  const k=t%this.L; evil.visible=true; hero.visible=false;
+  let x; if(k<3.2) x=lerp(22,31.2,ease(k/3.2)); else if(k<4.4) x=lerp(31.2,29,ease((k-3.2)/1.2)); else x=lerp(29,23,ease(seg(k,4.4,6.4)));
+  evil.position.set(x,2.2,0); evil.rotation.y=(k>3.2&&k<4.4)?Math.sin(k*40)*.18:0;
+  const bad=k>2.6&&k<7.2; setGate(O.gate,bad?'bad':null);
+  showPop(O.pGate2,k>3.2&&k<10.6); showPop(O.pGate3,k>5.6&&k<11);
+} };
+
+BEH.run={ cam:view([57,2,0],[57,16,38]), focus:['run','citizen','gcp'], L:17, tick(t){
+  const k=t%this.L;
+  let n=0,rate=0;
+  if(k>3.5&&k<5.2){n=1;rate=1;} else if(k>=5.2&&k<7){n=2;rate=3;} else if(k>=7&&k<10.4){n=3;rate=5;} else if(k>=10.4&&k<12.6){n=2;rate=2;} else if(k>=12.6&&k<14){n=1;rate=1;}
+  O.inst.forEach((i,ix)=>{ const target=ix<n?1:0; const cur=i.scale.x; const nx=lerp(cur,target||.001,.12); i.scale.setScalar(Math.max(nx,.001)); i.position.y=3.1+Math.sin(t*3+ix)*.06; });
+  O.instLbl.el.textContent=(Math.round(O.inst.filter(i=>i.scale.x>.5).length))+(n===1?' instancia':' instancias');
+  const vis=Math.min(6,Math.round(rate*1.6));
+  O.req.forEach((d,i)=>{ if(i<vis){ d.visible=true; const u=((k*.55+i/Math.max(vis,1))%1); d.position.set(lerp(74,49.5,u),2.2+Math.sin(u*Math.PI)*1.3,0);} else d.visible=false; });
+  showPop(O.pRun1,k<3.5||k>14.4); showPop(O.pRun2,k>7.6&&k<10); showPop(O.pRun3,k>3.5&&k<14);
+} };
+
+BEH.secret={ cam:view([44,3,7],[33,14,27]), focus:['secret','run','gcp'], L:14, tick(t){
+  const k=t%this.L; const ix=O.inst[1];
+  ix.scale.setScalar(k>2.4?Math.max(lerp(ix.scale.x,1,.15),.001):.001); O.instLbl.el.textContent=ix.scale.x>.5?'1 instancia':'0 instancias';
+  const bOn=k>2.6; O.sBeam.line.visible=bOn; O.sBeam.dot.visible=k>2.6&&k<6.4; if(bOn) setBeam(O.sBeam,V(46,3.4,12.6),V(46,3.2,1.2));
+  if(k>2.6&&k<6.4){ beamDot(O.sBeam,((k-2.6)/3.8)%1); showPop(O.pSec1,true);} else showPop(O.pSec1,false);
+  O.mask.on=k>=6.4; showPop(O.pSec2,k>7.4);
+  showPop(O.pSec3,k>9.4);
+  O.runtime.rotation.y=Math.sin(t)*.2;
+} };
+
+BEH.iam={ cam:view([27,2,2],[26,38,52]), focus:['iam'], L:16, tick(t){
+  const k=t%this.L; O.proj.visible=true; O.proj.rotation.z=t;
+  O.iamBeams.forEach((b,i)=>{ const on=k>.8+i*1.7; b.line.visible=on; b.dot.visible=on; b.lbl.on=on; if(on) beamDot(b,((k*.35+i*.17)%1)); });
+} };
+
+BEH.tf={ cam:view([38,2,33],[38,15,51]), focus:['tf'], L:15, tick(t){
+  const k=t%this.L;
+  O.bucket.scale.y=ease(seg(k,.8,2.2))||.001; O.bucket.position.y=1.7*O.bucket.scale.y;
+  const b1=k>.4&&k<3.4; O.tfBeam1.line.visible=b1; O.tfBeam1.dot.visible=b1; if(b1) beamDot(O.tfBeam1,((k-.4)/2)%1);
+  showPop(O.pTf1,k>.8&&k<5);
+  O.tfBeam2.line.visible=k>5; O.tfBeam2.dot.visible=k>5&&k<8; O.stateDoc.visible=k>5&&k<8.2;
+  if(k>5){ const u=ease(seg(k,5,7.6)); O.stateDoc.position.set(lerp(49,40.8,u),lerp(3,2,u),31); beamDot(O.tfBeam2,u); }
+  O.layers.forEach((l,i)=>{ l.visible=k>7.2+i*.9; });
+  showPop(O.pTf2,k>7.4&&k<11.6); showPop(O.pTf3,k>11.4);
+} };
+
+BEH.cost={ cam:view([38,3,38],[38,12,58]), focus:['cost'], L:15, tick(t){
+  const k=t%this.L; let p=0;
+  if(k<1) p=0; else if(k<3) p=.5*ease(seg(k,1,3)); else if(k<5) p=.5; else if(k<6.4) p=lerp(.5,.9,ease(seg(k,5,6.4))); else if(k<8) p=.9; else if(k<9) p=lerp(.9,1,ease(seg(k,8,9))); else p=1;
+  O.needlePivot.rotation.z=Math.PI*(1-p);
+  O.bell.visible=k>2.6; O.bell.rotation.z=(k>2.6&&k<12)?Math.sin(t*14)*.3:0;
+  showPop(O.pCost1,k>2.8&&k<5.4); showPop(O.pCost2,k>6&&k<8.4); showPop(O.pCost3,k>8.8&&k<12.4); showPop(O.pCost4,k>12.2);
+} };
+
+BEH.end={ cam:view([16,0,6],[14,80,112]), focus:['zones','end'], L:20, tick(t){
+  const k=(t%this.L)/this.L; const p=R_ALL.at(k); hero.visible=true; hero.position.copy(p); hero.scale.setScalar(3); O.seal.visible=k>R_ALL.frac[10];
+} };
+
+/* ============================================================================================
+   NAVEGACIÓN, CÁMARA Y PANEL
+   ============================================================================================ */
+let cur=-1, stepT=0, time=0, auto=false, autoT=0, focus=new Set(['zones']);
+const camPos=V(14,80,112), camLook=V(16,0,6), tgtPos=V(), tgtLook=V();
+let yaw=0,pitch=0,zoom=1, userMoved=false;
+let snap=true; // salto instantáneo de cámara en el primer paso o con movimiento reducido
+
+function viewOffset(){
+  const W=innerWidth,H=innerHeight; const hidden=$('panel').classList.contains('off');
+  let x=0,y=0;
+  if(!hidden){ if(innerWidth>820) x=Math.min(430,innerWidth*.4)/2; else y=Math.min(innerHeight*.44,330)/2; }
+  camera.setViewOffset(W,H,x,y,W,H);
+}
+function resize(){ renderer.setSize(innerWidth,innerHeight,false); camera.aspect=innerWidth/innerHeight; viewOffset(); camera.updateProjectionMatrix(); }
+addEventListener('resize',resize);
+
+function buildPanel(i){
+  const s=STEPS[i];
+  $('kicker').textContent=`${i+1}. ${s.kicker}`; $('title').textContent=s.title;
+  $('text').innerHTML=s.text; $('why').innerHTML=s.why;
+  $('files').innerHTML=s.files.map(f=>`<span class="chip">${f}</span>`).join('');
+  $('cmd').textContent=s.cmd; $('copy').textContent='Copiar';
+  $('scoreSec').hidden=true;
+  const q=s.quiz; $('quizSec').hidden=!q;
+  if(q){
+    $('qq').textContent=q.q; $('fb').textContent='';
+    $('opts').innerHTML=''; q.o.forEach((txt,ix)=>{ const b=document.createElement('button'); b.className='opt'; b.type='button'; b.textContent=txt; b.onclick=()=>answer(i,ix); $('opts').appendChild(b); });
+    if(answers[i]!==null) markAnswer(i);
+  }
+  if(i===STEPS.length-1){
+    const total=STEPS.filter(s=>s.quiz).length, ok=STEPS.reduce((n,s,ix)=>n+(s.quiz&&answers[ix]===s.quiz.a?1:0),0), done=answers.filter(a=>a!==null).length;
+    $('scoreSec').hidden=false;
+    $('score').innerHTML=done?`Acertaste <b>${ok}</b> de <b>${total}</b> preguntas (${done} respondidas).`:'Aún no respondiste ninguna pregunta: vuelve atrás y pruébate.';
+  }
+  $('panel').scrollTop=0;
+}
+function answer(i,ix){ if(answers[i]!==null) return; answers[i]=ix; markAnswer(i); }
+function markAnswer(i){
+  const q=STEPS[i].quiz; const chosen=answers[i];
+  [...$('opts').children].forEach((b,ix)=>{ b.disabled=true; if(ix===q.a) b.classList.add('ok'); else if(ix===chosen) b.classList.add('bad'); });
+  $('fb').innerHTML=(chosen===q.a?'✔ Correcto. ':'✗ No exactamente. ')+q.why;
+}
+function buildDots(){
+  $('dots').innerHTML=''; STEPS.forEach((s,i)=>{ const b=document.createElement('button'); b.type='button'; b.title=`${i+1}. ${s.title}`; b.setAttribute('aria-label',b.title); b.onclick=()=>goTo(i); $('dots').appendChild(b); });
+}
+function refreshChrome(){
+  [...$('dots').children].forEach((b,i)=>{ b.className=i===cur?'cur':(i<cur?'done':''); });
+  $('count').textContent=`${cur+1} / ${STEPS.length}`; $('bar').style.width=`${((cur+1)/STEPS.length)*100}%`;
+  $('prev').disabled=cur<=0; $('next').disabled=cur>=STEPS.length-1;
+}
+function goTo(i,instant=false){
+  i=Math.max(0,Math.min(STEPS.length-1,i)); if(i===cur) return;
+  cur=i; stepT=0; autoT=0; resetStage();
+  const b=BEH[STEPS[i].id]; focus=new Set(b.focus);
+  tgtPos.copy(b.cam.pos); tgtLook.copy(b.cam.look);
+  userMoved=false; if(instant||snap||reduceMotion){ camPos.copy(tgtPos); camLook.copy(tgtLook); yaw=pitch=0; zoom=1; snap=false; }
+  O.kmsKey.visible=focus.has('kms');
+  buildPanel(i); refreshChrome();
+  if(location.hash!==`#/${i+1}`) history.replaceState(null,'',`#/${i+1}`);
+}
+const next=()=>goTo(cur+1), prev=()=>goTo(cur-1);
+function setAuto(on){ auto=on; autoT=0; $('auto').classList.toggle('on',on); $('auto').textContent=on?'⏸':'⏵'; }
+$('next').onclick=()=>{next();}; $('prev').onclick=()=>{prev();};
+$('auto').onclick=()=>setAuto(!auto);
+$('reset').onclick=()=>{yaw=pitch=0;zoom=1;userMoved=false;};
+$('toggle').onclick=()=>{ $('panel').classList.toggle('off'); viewOffset(); };
+$('copy').onclick=async()=>{ try{ await navigator.clipboard.writeText($('cmd').textContent); $('copy').textContent='Copiado ✔'; }catch{ $('copy').textContent='Selecciona y copia'; } };
+addEventListener('keydown',(e)=>{
+  if(e.target.closest&&e.target.closest('button')&&e.key===' ') return;
+  if(e.key==='ArrowRight'||e.key==='PageDown'){e.preventDefault();next();}
+  else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();prev();}
+  else if(e.key===' '){e.preventDefault();setAuto(!auto);}
+  else if(e.key==='h'||e.key==='H'){$('toggle').click();}
+  else if(e.key==='r'||e.key==='R'){$('reset').click();}
+  else if(e.key==='Home'){goTo(0);} else if(e.key==='End'){goTo(STEPS.length-1);}
+});
+// órbita con el puntero
+{ const cv=$('c'); let drag=false,lx=0,ly=0;
+  cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;cv.classList.add('drag');cv.setPointerCapture(e.pointerId);});
+  cv.addEventListener('pointermove',e=>{ if(!drag) return; yaw-=(e.clientX-lx)*.005; pitch=Math.max(-.7,Math.min(.7,pitch-(e.clientY-ly)*.004)); lx=e.clientX;ly=e.clientY; userMoved=true; });
+  const end=()=>{drag=false;cv.classList.remove('drag');}; cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+  cv.addEventListener('wheel',e=>{ e.preventDefault(); zoom=Math.max(.45,Math.min(1.8,zoom*Math.exp(e.deltaY*.001))); userMoved=true; },{passive:false}); }
+
+/* ---------- bucle de render ---------- */
+const lbTmp=V(), sphr=new THREE.Spherical(), off=V();
+function updateLabels(){
+  const W=innerWidth,H=innerHeight;
+  for(const l of labels){
+    const want = l.on && (l.kind==='zone' ? (focus.has('zones')||focus.has(l.group)) : focus.has(l.group));
+    if(!want){ if(!l.hid){l.el.classList.add('hidden');l.hid=true;} continue; }
+    lbTmp.copy(l.pos).project(camera);
+    if(lbTmp.z>1||lbTmp.z<-1||Math.abs(lbTmp.x)>1.25||Math.abs(lbTmp.y)>1.25){ if(!l.hid){l.el.classList.add('hidden');l.hid=true;} continue; }
+    l.el.style.transform=`translate(${(lbTmp.x*.5+.5)*W}px,${(-lbTmp.y*.5+.5)*H}px) ${l.anchor==='right'?'translate(0,-50%)':'translate(-50%,-100%)'}`;
+    if(l.hid){l.el.classList.remove('hidden');l.hid=false;}
+  }
+}
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now; time+=dt; stepT+=dt;
+  for(const f of idle) f(time,dt);
+  const b=BEH[STEPS[cur].id]; b.tick(stepT,dt);
+  if(auto){ autoT+=dt; if(autoT>(b.L||14)*1.0){ if(cur<STEPS.length-1) next(); else setAuto(false); } }
+  const k=1-Math.exp(-dt*2.4); camPos.lerp(tgtPos,k); camLook.lerp(tgtLook,k);
+  if(!userMoved){ yaw*=1-k; pitch*=1-k; zoom=lerp(zoom,1,k); }
+  off.copy(camPos).sub(camLook); sphr.setFromVector3(off); sphr.theta+=yaw; sphr.phi=Math.max(.2,Math.min(1.5,sphr.phi+pitch)); sphr.radius*=zoom*(camera.aspect<1?1+(1-camera.aspect)*1.8:1); off.setFromSpherical(sphr);   // en pantallas estrechas la cámara se aleja
+  camera.position.copy(camLook).add(off); camera.lookAt(camLook);
+  camera.updateMatrixWorld();
+  renderer.render(scene,camera); updateLabels();
+  requestAnimationFrame(frame);
+}
+
+buildDots(); resize();
+const startAt=Math.max(1,Math.min(STEPS.length,parseInt((location.hash.match(/#\/(\d+)/)||[])[1]||'1',10)))-1;
+goTo(startAt,true);
+stepT=Math.max(0,parseFloat(new URLSearchParams(location.search).get('t'))||0);   // ?t=SEGUNDOS: salta dentro de la animación del paso
+addEventListener('hashchange',()=>{ const n=parseInt((location.hash.match(/#\/(\d+)/)||[])[1]||'0',10); if(n>=1&&n<=STEPS.length) goTo(n-1); });
+requestAnimationFrame((n)=>{last=n;frame(n);});
+window.__tour={goTo,get step(){return cur;},steps:STEPS.length};
+</script>
+</body>
+</html>
