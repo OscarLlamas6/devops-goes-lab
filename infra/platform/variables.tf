@@ -35,7 +35,11 @@ variable "api_key_secret_version" {
 }
 
 variable "enable_binauthz" {
-  description = "Create the Binary Authorization resources and make Cloud Run enforce the policy."
+  description = <<-EOT
+    Create the Binary Authorization resources and make Cloud Run enforce the policy.
+    Enabling it blocks any image without an attestation from the pipeline, so apply it only when
+    the pipeline already signs images (see the deploy workflow).
+  EOT
   type        = bool
-  default     = false
+  default     = true
 }
