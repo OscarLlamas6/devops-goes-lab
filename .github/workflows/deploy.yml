@@ -27,6 +27,8 @@ jobs:
       REGION: ${{ vars.GCP_REGION }}
       SERVICE_NAME: ${{ vars.SERVICE_NAME }}
       AR_REPO: ${{ vars.AR_REPO }}
+      ATTESTOR: ${{ vars.ATTESTOR }}
+      KMS_KEY_VERSION: ${{ vars.KMS_KEY_VERSION }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -38,7 +40,12 @@ jobs:
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
           service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
 
+      # gcloud is pinned: signing with KMS (sign-and-create) is a beta command in this version, so a
+      # floating version could change or remove it under our feet.
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: "520.0.0"
+          install_components: beta
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
@@ -59,6 +66,22 @@ jobs:
           DIGEST="$(gcloud artifacts docker images describe "${IMAGE}" --format='value(image_summary.digest)')"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      # Binary Authorization only admits images with an attestation signed by this pipeline.
+      # The attestation covers the digest (not a tag), and the private key never leaves Cloud KMS:
+      # sa-deployer can ask KMS to sign but cannot read the key.
+      - name: Attest image digest
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          if [ -z "${ATTESTOR}" ] || [ -z "${KMS_KEY_VERSION}" ]; then
+            echo "ATTESTOR and KMS_KEY_VERSION repository variables are required" >&2
+            exit 1
+          fi
+          gcloud beta container binauthz attestations sign-and-create \
+            --artifact-url="${AR_REPO}/${SERVICE_NAME}@${DIGEST}" \
+            --attestor="${ATTESTOR}" \
+            --keyversion="${KMS_KEY_VERSION}"
 
       - name: Deploy to Cloud Run
         env:
@@ -95,6 +118,7 @@ jobs:
             echo "| Commit | \`${GITHUB_SHA::7}\` |"
             echo "| Image | \`${IMAGE}\` |"
             echo "| Digest | \`${DIGEST}\` |"
+            echo "| Attested by | \`${ATTESTOR}\` |"
             echo "| Revision | \`${REVISION}\` |"
             echo "| URL | ${URL} |"
           } >> "$GITHUB_STEP_SUMMARY"
