@@ -1,0 +1,100 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    # Only changes that affect what runs in production trigger a deploy.
+    paths:
+      - "app/**"
+      - ".github/workflows/deploy.yml"
+
+# One deploy at a time. A running deploy is never cancelled halfway.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+# contents: read to check out the code; id-token: write only so this job can request the
+# OIDC token that Workload Identity Federation exchanges for Google credentials.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      SERVICE_NAME: ${{ vars.SERVICE_NAME }}
+      AR_REPO: ${{ vars.AR_REPO }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No key anywhere: GitHub's OIDC token is exchanged for short-lived credentials of
+      # sa-deployer. The provider only accepts this repository on the main branch.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      # The tag is the full git SHA. Tags are immutable, so re-running this workflow for a commit
+      # that was already pushed must reuse the existing image instead of failing on push.
+      - name: Build and push image
+        id: image
+        run: |
+          IMAGE="${AR_REPO}/${SERVICE_NAME}:${GITHUB_SHA}"
+          if gcloud artifacts docker images describe "${IMAGE}" >/dev/null 2>&1; then
+            echo "Image ${IMAGE} already exists, reusing it."
+          else
+            docker build --build-arg APP_VERSION="${GITHUB_SHA::7}" -t "${IMAGE}" app
+            docker push "${IMAGE}"
+          fi
+          # Deploy by digest, not by tag: the digest identifies the exact bytes.
+          DIGEST="$(gcloud artifacts docker images describe "${IMAGE}" --format='value(image_summary.digest)')"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloud Run
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          gcloud run deploy "${SERVICE_NAME}" \
+            --image "${IMAGE}@${DIGEST}" \
+            --region "${REGION}" \
+            --quiet
+
+      # Fails the job if the service is not healthy or is not running this commit.
+      - name: Smoke test
+        run: |
+          URL="$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.url)')"
+          BODY="$(curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "${URL}/health")"
+          echo "${BODY}"
+          test "$(echo "${BODY}" | jq -r .status)" = "ok"
+          test "$(echo "${BODY}" | jq -r .secret_configured)" = "true"
+          test "$(echo "${BODY}" | jq -r .version)" = "${GITHUB_SHA::7}"
+
+      - name: Summary
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          REVISION="$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.latestReadyRevisionName)')"
+          URL="$(gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='value(status.url)')"
+          {
+            echo "## Deployed ${SERVICE_NAME}"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`${GITHUB_SHA::7}\` |"
+            echo "| Image | \`${IMAGE}\` |"
+            echo "| Digest | \`${DIGEST}\` |"
+            echo "| Revision | \`${REVISION}\` |"
+            echo "| URL | ${URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"
