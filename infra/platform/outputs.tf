@@ -27,5 +27,6 @@ output "attestor_name" {
 
 output "kms_key_version" {
   description = "Full KMS key version used to sign attestations (empty while disabled)."
-  value       = try(replace(data.google_kms_crypto_key_version.attestor[0].id, "//cloudkms.googleapis.com/v1/", ""), "")
+  # trimprefix is literal; replace() would read a string wrapped in slashes as a regex.
+  value = try(trimprefix(data.google_kms_crypto_key_version.attestor[0].id, "//cloudkms.googleapis.com/v1/"), "")
 }
