@@ -1,0 +1,50 @@
+name: Pages
+
+# Publishes the 3dtour/ folder as a static site. GitHub Pages "from a branch" can only serve the
+# repository root or /docs, so the folder is uploaded as an artifact and deployed from here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "3dtour/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a running one is never cancelled halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: 3dtour
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only this job can write to Pages; id-token is how deploy-pages proves the artifact came from this run.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - name: Check the site is up
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          curl -fsS --retry 6 --retry-delay 5 --retry-all-errors "${PAGE_URL}" | grep -q "Recorrido 3D"
+          echo "OK: ${PAGE_URL}"
