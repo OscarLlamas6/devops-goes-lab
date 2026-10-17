@@ -206,18 +206,22 @@ attestor`. En Cloud Logging la denegación aparece como un evento de auditoría 
 protoPayload.status.message:"denied by attestor"
 ```
 
-**Efecto secundario conocido de la demo.** El intento rechazado deja una revisión fallida y el
-servicio queda con la condición `Ready: False` (`ContainerImageUnauthorized`); la plantilla del
-servicio apunta a la imagen rechazada y `terraform plan` muestra una diferencia en el nombre de la
-revisión. El tráfico sigue en la última revisión buena y `/health` responde con normalidad.
-Redesplegar la imagen buena deja `terraform plan` limpio; la condición `Ready` del servicio se
-normaliza con el siguiente despliegue real del pipeline:
+**Lección aprendida: el efecto secundario de la demo.** Una versión anterior del script desplegaba la
+imagen sin firmar con `--no-traffic --tag=unsigned`. Eso dejó el servicio con el tráfico **fijado** a una
+revisión concreta y con una **etiqueta** `unsigned` apuntando a la revisión rechazada. Resultado: los
+despliegues siguientes del pipeline creaban revisiones sanas (`Ready: True`) pero **no recibían tráfico**,
+el servicio seguía en `Ready: False` y `gcloud run deploy` terminaba con error citando la imagen rechazada,
+no la que se estaba desplegando. La firma no tenía nada que ver. Se diagnostica mirando `spec.traffic`:
 ```bash
-GOOD=$(gcloud run revisions describe <revision-buena> --region us-central1 --format='value(spec.containers[0].image)')
-gcloud run deploy tramites-api --image "$GOOD" --region us-central1 --quiet
+gcloud run services describe tramites-api --region us-central1 --format='yaml(spec.traffic)'
 ```
-`gcloud` puede imprimir `Deployment failed` con el mensaje de la revisión rechazada aunque la
-revisión nueva sí se haya creado: lee una condición obsoleta del servicio.
+Si aparece un nombre de revisión o una etiqueta en lugar de un único `latestRevision: true`, se arregla con:
+```bash
+gcloud run services update-traffic tramites-api --region us-central1 --remove-tags=unsigned
+gcloud run services update-traffic tramites-api --region us-central1 --to-latest
+```
+El script actual ya no usa `--no-traffic` ni `--tag`, y al terminar muestra la configuración de tráfico
+para comprobarlo.
 
 **Evidencia.** [docs/evidencias/binauthz-rechazo.txt](docs/evidencias/binauthz-rechazo.txt) y la
 captura de Cloud Logging.

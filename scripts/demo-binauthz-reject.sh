@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Demonstrates that Binary Authorization rejects an image the pipeline did not attest.
-# It builds and pushes an UNSIGNED image, tries to deploy it by digest as a revision without
-# traffic, and stores the denial in docs/evidencias/binauthz-rechazo.txt.
+# It builds and pushes an UNSIGNED image, tries to deploy it by digest, and stores the denial in
+# docs/evidencias/binauthz-rechazo.txt. It deliberately does NOT use --no-traffic or --tag: those
+# pin the service traffic to one revision and leave a tag pointing at the rejected revision, which
+# stops later pipeline deploys from receiving traffic.
 # Run it with your own gcloud identity (not the pipeline's). Usage: ./scripts/demo-binauthz-reject.sh
 set -euo pipefail
 
@@ -35,7 +37,7 @@ DIGEST="$(gcloud artifacts docker images describe "${IMAGE}" --format='value(ima
   echo "# date:    $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "# project: ${PROJECT_ID}"
   echo "# image:   ${REPO}/${SERVICE_NAME}@${DIGEST} (no attestation)"
-  echo "# command: gcloud run deploy ${SERVICE_NAME} --image <image>@<digest> --no-traffic --tag=unsigned"
+  echo "# command: gcloud run deploy ${SERVICE_NAME} --image <image>@<digest>"
   echo
 } > "${EVIDENCE}"
 
@@ -45,7 +47,7 @@ export CLOUDSDK_CORE_DISABLE_COLOR=true # keep the evidence file free of ANSI es
 gcloud run deploy "${SERVICE_NAME}" \
   --image "${REPO}/${SERVICE_NAME}@${DIGEST}" \
   --region "${REGION}" \
-  --no-traffic --tag=unsigned --quiet >> "${EVIDENCE}" 2>&1
+  --quiet >> "${EVIDENCE}" 2>&1
 STATUS=$?
 set -e
 
@@ -85,6 +87,14 @@ fi
 echo
 echo "To take the screenshot: Console -> Logging -> Logs Explorer, query:"
 echo "    ${LOG_FILTER}"
+
+echo
+echo "==> Traffic after the attempt (it must still follow the latest ready revision):"
+gcloud run services describe "${SERVICE_NAME}" --region "${REGION}" --format='yaml(spec.traffic)' || true
+echo "    Expected: a single entry with 'latestRevision: true'. If it lists a revision name or a tag,"
+echo "    later deploys will NOT receive traffic. Fix it with:"
+echo "      gcloud run services update-traffic ${SERVICE_NAME} --region ${REGION} --remove-tags=unsigned"
+echo "      gcloud run services update-traffic ${SERVICE_NAME} --region ${REGION} --to-latest"
 
 echo
 echo "==> The unsigned test image is left in Artifact Registry. Remove it with:"
